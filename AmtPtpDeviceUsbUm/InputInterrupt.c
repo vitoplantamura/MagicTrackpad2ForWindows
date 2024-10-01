@@ -533,8 +533,12 @@ AmtPtpServiceTouchInputInterruptType5(
 			// BOOL valid_finger = f->Finger != 6;
 			PtpReport.Contacts[i].Confidence = DeviceContext->PalmRejection == FALSE ? TRUE : f->Finger != 6; // valid_size && valid_finger;
 
+#define UINT32_SET_MSB(v) ((UINT32)v | ((UINT32)1 << 31))
+
 			PPTP_REPORT_AUX prev_contact = NULL;
 			if (
+				DeviceContext->PrevPtpReportAux1.Id != UINT32_SET_MSB(f->Id) &&
+				DeviceContext->PrevPtpReportAux2.Id != UINT32_SET_MSB(f->Id) &&
 				(DeviceContext->IgnoreButtonFinger == FALSE ? TRUE : (!DeviceContext->PrevIsButtonClicked || !PtpReport.IsButtonClicked)) &&
 				(DeviceContext->StopPressure == 0xffffffff ? TRUE : f->Pressure > DeviceContext->StopPressure) &&
 				(DeviceContext->StopSize == 0xffffffff ? TRUE : f->Size > DeviceContext->StopSize)
@@ -556,26 +560,33 @@ AmtPtpServiceTouchInputInterruptType5(
 				contact->Id = f->Id;
 				contact->TipSwitch = PtpReport.Contacts[i].TipSwitch;
 			}
-			else
+			else // lock the pointer:
 			{
 				size_t j;
 				for (j = 0; j < 2; j++)
 				{
 					PPTP_REPORT_AUX contact = !j ? &DeviceContext->PrevPtpReportAux1 : &DeviceContext->PrevPtpReportAux2;
 
-					if (contact->Id == f->Id)
+					if (contact->Id == f->Id || contact->Id == UINT32_SET_MSB(f->Id))
 					{
 						contact->TipSwitch = PtpReport.Contacts[i].TipSwitch;
 
 						if (contact->TipSwitch)
+						{
 							prev_contact = contact;
+							contact->Id = UINT32_SET_MSB(contact->Id);
+						}
 						else
+						{
 							contact->Id = (UINT32)-1;
+						}
 					}
 				}
 			}
 			PtpReport.Contacts[i].X = prev_contact ? prev_contact->X : (USHORT)x;
 			PtpReport.Contacts[i].Y = prev_contact ? prev_contact->Y : (USHORT)y;
+
+#undef UINT32_SET_MSB
 
 //#ifdef INPUT_CONTENT_TRACE
 			TraceEvents(
