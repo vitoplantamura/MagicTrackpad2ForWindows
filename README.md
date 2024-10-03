@@ -16,11 +16,11 @@ I'm really happy with the result: the feeling of the MT2 is identical to that of
 
 # Installation
 
-**NOTE**: Only for the MT2 when connected via USB! Bluetooth not supported. ARM64 not supported (at the moment).
+**NOTE**: Only for the MT2 when connected via USB, ie bluetooth not supported.
 
-1) Connect the MT2 to the PC via USB and first install the imbushuo driver: download [this file](https://github.com/imbushuo/mac-precision-touchpad/releases/download/2105-3979/Drivers-amd64-ReleaseMSSigned.zip), unzip it, right-click on the INF file and click "Install".
+1) Connect the MT2 to the PC via USB and first install the imbushuo driver: download [this file (for x86)](https://github.com/imbushuo/mac-precision-touchpad/releases/download/2105-3979/Drivers-amd64-ReleaseMSSigned.zip) or [this file (for ARM)](https://github.com/imbushuo/mac-precision-touchpad/releases/download/2105-3979/Drivers-arm64-ReleaseMSSigned.zip), unzip it, right-click on the INF file and click "Install".
 
-2) Download the two files of this project from the Releases of this repo (save them in the same directory), start the Control Panel and click on "Install Driver".
+2) Download the zip file of this project from the [Releases](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/releases) of this repo, unzip it, start the Control Panel and click on "Install Driver".
 
 # How the Installation Works
 

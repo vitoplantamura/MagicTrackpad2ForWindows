@@ -15,6 +15,7 @@ using System.Security.Principal;
 using System.Security.AccessControl;
 using System.Reflection;
 using Microsoft.Win32;
+using System.Diagnostics;
 
 namespace AmtPtpControlPanel
 {
@@ -27,10 +28,12 @@ namespace AmtPtpControlPanel
 
         private void ctlInstallDriver_Click(object sender, EventArgs e)
         {
+            bool isArm64 = ArchitectureInfo.IsArm64();
+
             string fn = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                @"System32\DriverStore\FileRepository\amtptpdevice.inf_amd64_5de6239780ba286e\AmtPtpDeviceUsbUm.dll");
+                @"System32\DriverStore\FileRepository\amtptpdevice.inf_" + (isArm64 ? "arm64_fd8449c22cc620c8" : "amd64_5de6239780ba286e") + @"\AmtPtpDeviceUsbUm.dll");
             string src = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location),
-                @"AmtPtpDeviceUsbUm.dll");
+                @"AmtPtpDeviceUsbUm" + (isArm64 ? "_ARM64" : "_AMD64") + ".dll");
 
             Action<string> showErr = (string str) =>
             {
@@ -452,6 +455,35 @@ namespace AmtPtpControlPanel
     //=================
     // Low level stuff
     //=================
+
+    public class ArchitectureInfo
+    {
+        [DllImport("kernel32.dll", EntryPoint = "LoadLibrary")]
+        public static extern IntPtr LoadLibrary([MarshalAs(UnmanagedType.LPStr)] string lpLibFileName);
+        [DllImport("kernel32.dll", EntryPoint = "GetProcAddress")]
+        public static extern IntPtr GetProcAddress(IntPtr hModule, [MarshalAs(UnmanagedType.LPStr)] string lpProcName);
+        [DllImport("kernel32.dll", EntryPoint = "FreeLibrary")]
+        public static extern bool FreeLibrary(IntPtr hModule);
+
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+        public delegate bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
+
+        public static bool IsArm64()
+        {
+            IntPtr lib = LoadLibrary(@"kernel32.dll");
+
+            IntPtr pfn = GetProcAddress(lib, "IsWow64Process2");
+            if (pfn == IntPtr.Zero)
+                return false;
+
+            IsWow64Process2 isWow64Process2 = (IsWow64Process2)Marshal.GetDelegateForFunctionPointer(pfn, typeof(IsWow64Process2));
+
+            if (!isWow64Process2(Process.GetCurrentProcess().Handle, out var processMachine, out var nativeMachine))
+                return false;
+
+            return nativeMachine == 0xaa64;
+        }
+    }
 
     public class TokenManipulator // https://stackoverflow.com/questions/17031552/how-do-you-take-file-ownership-with-powershell/17047190#17047190
     {
