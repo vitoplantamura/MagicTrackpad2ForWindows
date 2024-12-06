@@ -1,8 +1,12 @@
+This is a fork of [vitoplantamura's MagicTrackpad2ForWindows](https://github.com/vitoplantamura/MagicTrackpad2ForWindows) with additional support for the new USB C Magic Trackpad 2.
+
+# Windows Precision Touchpad Implementation for Apple MacBook family/Magic Trackpad 2
+
 This is the Precision Touchpad driver for the Magic Trackpad 2 that I personally use on my PCs. It is based entirely on the excellent [imbushuo driver](https://github.com/imbushuo/mac-precision-touchpad) and solves a number of problems explained in the "Context" section below. This is an image of the Control Panel: (each option is an additional feature built on top of the "vanilla" imbushuo driver)
 
 ![Control Panel](https://raw.githubusercontent.com/vitoplantamura/MagicTrackpad2ForWindows/master/assets/ControlPanel.png)
 
-# Context
+## Context
 
 In terms of hardware, the Magic Trackpad 2 is the best external touchpad you can buy (not just for macOS), by far. In terms of software, specifically for Windows, AFAIK there are 4 options to use it: Trackpad++, Magic Utilities, the excellent [open source driver by imbushuo](https://github.com/imbushuo/mac-precision-touchpad) and the [official 2021 Apple driver](https://github.com/lc700x/MagicTrackPad2_Windows_Precision_Drivers). In my opinion the two options that offer the best feeling, experience and stability (using the MT2 via USB at least) are the last two (imbushuo and Apple drivers) which coincidentally are extremely similar according to my tests (in terms of "feeling", and they are the only 2 that present the MT2 as a Precision Touchpad to Windows). Unfortunately these two solutions present different pointer precision problems. One problem is that of "near field fingers", i.e. the trackpad registers movements and clicks even without physically touching the trackpad surface, at a distance of even one millimeter from the surface. Another issue (determined by the first) is the accuracy of the pointer when you lift your finger from the trackpad. Furthermore, AFAIK, with both the imbushuo driver and the Apple one, it is not possible to adjust the behavior of the haptic feedback.
 
@@ -14,7 +18,7 @@ I'm really happy with the result: the feeling of the MT2 is identical to that of
 
 **License**: This project has the same license as the imbushuo project, on which it is entirely based.
 
-# Installation
+## Installation
 
 **NOTE**: Only for the MT2 when connected via USB, ie bluetooth not supported.
 
@@ -22,7 +26,7 @@ I'm really happy with the result: the feeling of the MT2 is identical to that of
 
 2) Download the zip file of this project from the [Releases](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/releases) of this repo, unzip it, start the Control Panel and click on "Install Driver".
 
-# How the Installation Works
+## How the Installation Works
 
 The imbushuo MT2 USB driver is a UMDF driver. Windows Driver Signature Enforcement does not block the loading of self-signed UMDF drivers. This unfortunately does not apply to KMDF drivers such as the imbushuo bluetooth driver for the MT2 and this is the reason why this project only supports the USB version of the driver. On a personal note I prefer to use the MT2 via USB: the MT2 can be switched between different computers without problems, no worries about the battery, the driver cannot bluescreen the PC and the USB version of the imbushuo driver in particular has proven to be very stable over the years.
 
