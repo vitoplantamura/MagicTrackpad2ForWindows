@@ -97,5 +97,6 @@
     <None Include="AmtPtpDevice.wprp">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

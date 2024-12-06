@@ -3,3 +3,6 @@ bin/
 obj/
 build/
 intermediate/
+packages/
+
+packages.config
