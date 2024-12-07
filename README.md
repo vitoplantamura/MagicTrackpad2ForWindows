@@ -1,4 +1,5 @@
 This is a fork of [vitoplantamura's MagicTrackpad2ForWindows](https://github.com/vitoplantamura/MagicTrackpad2ForWindows) with additional support for the new USB C Magic Trackpad 2.
+Installation of this fork differs slightly from the original project.
 
 # Windows Precision Touchpad Implementation for Apple MacBook family/Magic Trackpad 2
 
@@ -25,6 +26,10 @@ I'm really happy with the result: the feeling of the MT2 is identical to that of
 1) Connect the MT2 to the PC via USB and first install the imbushuo driver: download [this file (for x86)](https://github.com/imbushuo/mac-precision-touchpad/releases/download/2105-3979/Drivers-amd64-ReleaseMSSigned.zip) or [this file (for ARM)](https://github.com/imbushuo/mac-precision-touchpad/releases/download/2105-3979/Drivers-arm64-ReleaseMSSigned.zip), unzip it, right-click on the INF file and click "Install".
 
 2) Download the zip file of this project from the [Releases](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/releases) of this repo, unzip it, start the Control Panel and click on "Install Driver".
+
+3) Manually choose the drivers in Device Manager for the Human Interface Devices with the Instance Path that matches this: USB\VID_05AC&PID_0324&MI_00\8&3483184D&0&0001 & USB\VID_05AC&PID_0324&MI_01\8&3483184D&0&0001 to be the Apple USB Precision Touchpad Device (User-mode) by Bingxing Wang. This can be done by double-clicking the device item in Device Manager -> (Details Tab) Update Driver -> Browse my computer for drivers -> Pick from list of drivers -> Uncheck Show compatible hardware.
+
+4) Use [AmtPtpControlPanel] to fine tune your experience after confirming that the driver has loaded successfully.
 
 ## How the Installation Works
 
