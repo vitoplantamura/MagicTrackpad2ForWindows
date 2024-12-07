@@ -27,9 +27,9 @@ I'm really happy with the result: the feeling of the MT2 is identical to that of
 
 2) Download the zip file of this project from the [Releases](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/releases) of this repo, unzip it, start the Control Panel and click on "Install Driver".
 
-3) Manually choose the drivers in Device Manager for the Human Interface Devices with the Instance Path that matches this: USB\VID_05AC&PID_0324&MI_00\8&3483184D&0&0001 & USB\VID_05AC&PID_0324&MI_01\8&3483184D&0&0001 to be the Apple USB Precision Touchpad Device (User-mode) by Bingxing Wang. This can be done by double-clicking the device item in Device Manager -> (Details Tab) Update Driver -> Browse my computer for drivers -> Pick from list of drivers -> Uncheck Show compatible hardware.
+3) Manually choose the drivers in Device Manager for the Human Interface Devices with the Instance Path that matches this: USB\VID_05AC&PID_0324&MI_00\*** & USB\VID_05AC&PID_0324&MI_01\*** to be the Apple USB Precision Touchpad Device (User-mode) by Bingxing Wang (imbushuo). This can be done by double-clicking the device item in Device Manager -> (Details Tab) Update Driver -> Browse my computer for drivers -> Pick from list of drivers -> Uncheck Show compatible hardware.
 
-4) Use [AmtPtpControlPanel] to fine tune your experience after confirming that the driver has loaded successfully.
+4) Use [AmtPtpControlPanel.exe] to fine tune your experience after confirming that the driver has loaded successfully.
 
 ## How the Installation Works
 
