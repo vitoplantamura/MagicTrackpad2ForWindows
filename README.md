@@ -24,7 +24,18 @@ I'm really happy with the result: the feeling of the MT2 is identical to that of
 
 **If your Magic Trackpad 2 is with Lightning Port (before Oct 2024), the installation is finished. If it is with USB-C (after Oct 2024) then this further step is necessary:**
 
-Manually choose the drivers in Device Manager for the Human Interface Devices with the Instance Path that matches this: ```USB\VID_05AC&PID_0324&MI_00\***``` & ```USB\VID_05AC&PID_0324&MI_01\***``` to be the Apple USB Precision Touchpad Device (User-mode) by Bingxing Wang (imbushuo). This can be done by double-clicking the device item in Device Manager -> (Details Tab) Update Driver -> Browse my computer for drivers -> Pick from list of drivers -> Uncheck Show compatible hardware.
+<details>
+<summary>USB-C Magic Trackpad 2 instructions: (click to expand)</summary>
+
+Manually choose the drivers in Device Manager for the Human Interface Devices with the Instance Path that matches this: ```USB\VID_05AC&PID_0324&MI_01\***``` to be the Apple USB Precision Touchpad Device (**User-mode**) by Bingxing Wang (imbushuo). This can be done by double-clicking the device item in Device Manager -> (Details Tab) Update Driver -> Browse my computer for drivers -> Pick from list of drivers -> Uncheck Show compatible hardware.
+
+```USB\VID_05AC&PID_0324&MI_00\***``` can be disabled instead.
+
+If you have a **regular Windows 10 or 11 installation**, you shouldn't have any problems. During major OS updates (for example installation of Windows 11 version 24H2), you may have to repeat the procedure of manually specifying the driver in the Device Manager ([link](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/issues/13#issuecomment-2546278806)).
+
+In the case of **Windows 10 Enterprise LTSC**, manually specifying the drivers in the Device Manager may not work. In this case the only possibility is to install a self signed driver package, which requires importing a certificate in the Trusted Root Certification Authorities of the Local Machine ([link](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/issues/13#issuecomment-2553174594)).
+
+</details>
 
 # How the Installation Works
 
