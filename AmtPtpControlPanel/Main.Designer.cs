@@ -30,7 +30,7 @@ namespace AmtPtpControlPanel
         private void InitializeComponent()
         {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Main));
-            this.ctlInstallDriver = new System.Windows.Forms.Button();
+            this.ctlTouchpadSettings = new System.Windows.Forms.Button();
             this.ctlApply = new System.Windows.Forms.Button();
             this.ctlFeedback = new System.Windows.Forms.TrackBar();
             this.ctlLightLabel = new System.Windows.Forms.Label();
@@ -52,25 +52,29 @@ namespace AmtPtpControlPanel
             this.ctlStopPressure = new System.Windows.Forms.RadioButton();
             this.ctlStopDoNothing = new System.Windows.Forms.RadioButton();
             this.groupBox4 = new System.Windows.Forms.GroupBox();
-            this.ctlIgnoreNearFingers = new System.Windows.Forms.CheckBox();
-            this.ctlIgnoreButtonFinger = new System.Windows.Forms.CheckBox();
             this.ctlPalmRejection = new System.Windows.Forms.CheckBox();
+            this.ctlIgnoreButtonFinger = new System.Windows.Forms.CheckBox();
+            this.ctlIgnoreNearFingers = new System.Windows.Forms.CheckBox();
+            this.ctlBatteryProgressBar = new AmtPtpControlPanel.ProgressBarWithPercentage();
+            this.ctlBatteryGroupBox = new System.Windows.Forms.GroupBox();
+            this.ctlBatteryUpdate = new System.Windows.Forms.Button();
             ((System.ComponentModel.ISupportInitialize)(this.ctlFeedback)).BeginInit();
             this.groupBox1.SuspendLayout();
             this.groupBox2.SuspendLayout();
             this.groupBox3.SuspendLayout();
             this.groupBox4.SuspendLayout();
+            this.ctlBatteryGroupBox.SuspendLayout();
             this.SuspendLayout();
             // 
-            // ctlInstallDriver
+            // ctlTouchpadSettings
             // 
-            this.ctlInstallDriver.Location = new System.Drawing.Point(13, 537);
-            this.ctlInstallDriver.Name = "ctlInstallDriver";
-            this.ctlInstallDriver.Size = new System.Drawing.Size(195, 33);
-            this.ctlInstallDriver.TabIndex = 5;
-            this.ctlInstallDriver.Text = "Install Driver";
-            this.ctlInstallDriver.UseVisualStyleBackColor = true;
-            this.ctlInstallDriver.Click += new System.EventHandler(this.ctlInstallDriver_Click);
+            this.ctlTouchpadSettings.Location = new System.Drawing.Point(13, 537);
+            this.ctlTouchpadSettings.Name = "ctlTouchpadSettings";
+            this.ctlTouchpadSettings.Size = new System.Drawing.Size(242, 33);
+            this.ctlTouchpadSettings.TabIndex = 5;
+            this.ctlTouchpadSettings.Text = "Windows Touchpad Settings";
+            this.ctlTouchpadSettings.UseVisualStyleBackColor = true;
+            this.ctlTouchpadSettings.Click += new System.EventHandler(this.ctlTouchpadSettings_Click);
             // 
             // ctlApply
             // 
@@ -96,7 +100,7 @@ namespace AmtPtpControlPanel
             this.ctlLightLabel.AutoSize = true;
             this.ctlLightLabel.Location = new System.Drawing.Point(50, 145);
             this.ctlLightLabel.Name = "ctlLightLabel";
-            this.ctlLightLabel.Size = new System.Drawing.Size(39, 17);
+            this.ctlLightLabel.Size = new System.Drawing.Size(35, 16);
             this.ctlLightLabel.TabIndex = 3;
             this.ctlLightLabel.Text = "Light";
             // 
@@ -105,7 +109,7 @@ namespace AmtPtpControlPanel
             this.ctlMediumLabel.AutoSize = true;
             this.ctlMediumLabel.Location = new System.Drawing.Point(139, 145);
             this.ctlMediumLabel.Name = "ctlMediumLabel";
-            this.ctlMediumLabel.Size = new System.Drawing.Size(57, 17);
+            this.ctlMediumLabel.Size = new System.Drawing.Size(55, 16);
             this.ctlMediumLabel.TabIndex = 4;
             this.ctlMediumLabel.Text = "Medium";
             // 
@@ -114,7 +118,7 @@ namespace AmtPtpControlPanel
             this.ctlFirmLabel.AutoSize = true;
             this.ctlFirmLabel.Location = new System.Drawing.Point(245, 145);
             this.ctlFirmLabel.Name = "ctlFirmLabel";
-            this.ctlFirmLabel.Size = new System.Drawing.Size(35, 17);
+            this.ctlFirmLabel.Size = new System.Drawing.Size(33, 16);
             this.ctlFirmLabel.TabIndex = 5;
             this.ctlFirmLabel.Text = "Firm";
             // 
@@ -123,7 +127,7 @@ namespace AmtPtpControlPanel
             this.ctlSilentClicking.AutoSize = true;
             this.ctlSilentClicking.Location = new System.Drawing.Point(112, 68);
             this.ctlSilentClicking.Name = "ctlSilentClicking";
-            this.ctlSilentClicking.Size = new System.Drawing.Size(115, 21);
+            this.ctlSilentClicking.Size = new System.Drawing.Size(110, 20);
             this.ctlSilentClicking.TabIndex = 1;
             this.ctlSilentClicking.Text = "Silent clicking";
             this.ctlSilentClicking.UseVisualStyleBackColor = true;
@@ -133,7 +137,7 @@ namespace AmtPtpControlPanel
             this.ctlMacOSClickOptions.AutoSize = true;
             this.ctlMacOSClickOptions.Location = new System.Drawing.Point(17, 21);
             this.ctlMacOSClickOptions.Name = "ctlMacOSClickOptions";
-            this.ctlMacOSClickOptions.Size = new System.Drawing.Size(194, 21);
+            this.ctlMacOSClickOptions.Size = new System.Drawing.Size(185, 20);
             this.ctlMacOSClickOptions.TabIndex = 0;
             this.ctlMacOSClickOptions.TabStop = true;
             this.ctlMacOSClickOptions.Text = "Use macOS Click Options:";
@@ -170,7 +174,7 @@ namespace AmtPtpControlPanel
             this.ctlMaximumFeedback.AutoSize = true;
             this.ctlMaximumFeedback.Location = new System.Drawing.Point(28, 98);
             this.ctlMaximumFeedback.Name = "ctlMaximumFeedback";
-            this.ctlMaximumFeedback.Size = new System.Drawing.Size(332, 21);
+            this.ctlMaximumFeedback.Size = new System.Drawing.Size(316, 20);
             this.ctlMaximumFeedback.TabIndex = 1;
             this.ctlMaximumFeedback.TabStop = true;
             this.ctlMaximumFeedback.Text = "Maximum haptic feedback (very clicky and loud!)";
@@ -182,7 +186,7 @@ namespace AmtPtpControlPanel
             this.ctlDisableFeedback.AutoSize = true;
             this.ctlDisableFeedback.Location = new System.Drawing.Point(28, 61);
             this.ctlDisableFeedback.Name = "ctlDisableFeedback";
-            this.ctlDisableFeedback.Size = new System.Drawing.Size(398, 21);
+            this.ctlDisableFeedback.Size = new System.Drawing.Size(376, 20);
             this.ctlDisableFeedback.TabIndex = 0;
             this.ctlDisableFeedback.TabStop = true;
             this.ctlDisableFeedback.Text = "Disable haptic feedback and force touch button completely";
@@ -218,7 +222,7 @@ namespace AmtPtpControlPanel
             this.ctlStopSizeLabel.AutoSize = true;
             this.ctlStopSizeLabel.Location = new System.Drawing.Point(491, 108);
             this.ctlStopSizeLabel.Name = "ctlStopSizeLabel";
-            this.ctlStopSizeLabel.Size = new System.Drawing.Size(164, 17);
+            this.ctlStopSizeLabel.Size = new System.Drawing.Size(150, 16);
             this.ctlStopSizeLabel.TabIndex = 6;
             this.ctlStopSizeLabel.Text = "units. (7 is a good value)";
             this.ctlStopSizeLabel.Click += new System.EventHandler(this.ctlStop_Click);
@@ -237,7 +241,7 @@ namespace AmtPtpControlPanel
             this.ctlStopPressureLabel.AutoSize = true;
             this.ctlStopPressureLabel.Location = new System.Drawing.Point(419, 71);
             this.ctlStopPressureLabel.Name = "ctlStopPressureLabel";
-            this.ctlStopPressureLabel.Size = new System.Drawing.Size(306, 17);
+            this.ctlStopPressureLabel.Size = new System.Drawing.Size(281, 16);
             this.ctlStopPressureLabel.TabIndex = 3;
             this.ctlStopPressureLabel.Text = "units. (0 means no pressure; 0 is a good value)";
             this.ctlStopPressureLabel.Click += new System.EventHandler(this.ctlStop_Click);
@@ -256,7 +260,7 @@ namespace AmtPtpControlPanel
             this.ctlStopSize.AutoSize = true;
             this.ctlStopSize.Location = new System.Drawing.Point(17, 106);
             this.ctlStopSize.Name = "ctlStopSize";
-            this.ctlStopSize.Size = new System.Drawing.Size(453, 21);
+            this.ctlStopSize.Size = new System.Drawing.Size(414, 20);
             this.ctlStopSize.TabIndex = 4;
             this.ctlStopSize.TabStop = true;
             this.ctlStopSize.Text = "Stop the pointer if the size of the touch area is less than or equal to";
@@ -268,7 +272,7 @@ namespace AmtPtpControlPanel
             this.ctlStopPressure.AutoSize = true;
             this.ctlStopPressure.Location = new System.Drawing.Point(17, 69);
             this.ctlStopPressure.Name = "ctlStopPressure";
-            this.ctlStopPressure.Size = new System.Drawing.Size(372, 21);
+            this.ctlStopPressure.Size = new System.Drawing.Size(342, 20);
             this.ctlStopPressure.TabIndex = 1;
             this.ctlStopPressure.TabStop = true;
             this.ctlStopPressure.Text = "Stop the pointer if the pressure is less than or equal to";
@@ -280,7 +284,7 @@ namespace AmtPtpControlPanel
             this.ctlStopDoNothing.AutoSize = true;
             this.ctlStopDoNothing.Location = new System.Drawing.Point(17, 32);
             this.ctlStopDoNothing.Name = "ctlStopDoNothing";
-            this.ctlStopDoNothing.Size = new System.Drawing.Size(98, 21);
+            this.ctlStopDoNothing.Size = new System.Drawing.Size(92, 20);
             this.ctlStopDoNothing.TabIndex = 0;
             this.ctlStopDoNothing.TabStop = true;
             this.ctlStopDoNothing.Text = "Do nothing";
@@ -299,15 +303,15 @@ namespace AmtPtpControlPanel
             this.groupBox4.TabStop = false;
             this.groupBox4.Text = "Other options:";
             // 
-            // ctlIgnoreNearFingers
+            // ctlPalmRejection
             // 
-            this.ctlIgnoreNearFingers.AutoSize = true;
-            this.ctlIgnoreNearFingers.Location = new System.Drawing.Point(17, 32);
-            this.ctlIgnoreNearFingers.Name = "ctlIgnoreNearFingers";
-            this.ctlIgnoreNearFingers.Size = new System.Drawing.Size(400, 21);
-            this.ctlIgnoreNearFingers.TabIndex = 0;
-            this.ctlIgnoreNearFingers.Text = "Ignore input from fingers not touching the trackpad surface";
-            this.ctlIgnoreNearFingers.UseVisualStyleBackColor = true;
+            this.ctlPalmRejection.AutoSize = true;
+            this.ctlPalmRejection.Location = new System.Drawing.Point(17, 106);
+            this.ctlPalmRejection.Name = "ctlPalmRejection";
+            this.ctlPalmRejection.Size = new System.Drawing.Size(120, 20);
+            this.ctlPalmRejection.TabIndex = 2;
+            this.ctlPalmRejection.Text = "Palm Rejection";
+            this.ctlPalmRejection.UseVisualStyleBackColor = true;
             // 
             // ctlIgnoreButtonFinger
             // 
@@ -320,28 +324,60 @@ namespace AmtPtpControlPanel
     "he pointer, for example)";
             this.ctlIgnoreButtonFinger.UseVisualStyleBackColor = true;
             // 
-            // ctlPalmRejection
+            // ctlIgnoreNearFingers
             // 
-            this.ctlPalmRejection.AutoSize = true;
-            this.ctlPalmRejection.Location = new System.Drawing.Point(17, 106);
-            this.ctlPalmRejection.Name = "ctlPalmRejection";
-            this.ctlPalmRejection.Size = new System.Drawing.Size(124, 21);
-            this.ctlPalmRejection.TabIndex = 2;
-            this.ctlPalmRejection.Text = "Palm Rejection";
-            this.ctlPalmRejection.UseVisualStyleBackColor = true;
+            this.ctlIgnoreNearFingers.AutoSize = true;
+            this.ctlIgnoreNearFingers.Location = new System.Drawing.Point(17, 32);
+            this.ctlIgnoreNearFingers.Name = "ctlIgnoreNearFingers";
+            this.ctlIgnoreNearFingers.Size = new System.Drawing.Size(368, 20);
+            this.ctlIgnoreNearFingers.TabIndex = 0;
+            this.ctlIgnoreNearFingers.Text = "Ignore input from fingers not touching the trackpad surface";
+            this.ctlIgnoreNearFingers.UseVisualStyleBackColor = true;
+            // 
+            // ctlBatteryProgressBar
+            // 
+            this.ctlBatteryProgressBar.DisplayType = AmtPtpControlPanel.ProgressBarWithPercentage.TextDisplayType.Manual;
+            this.ctlBatteryProgressBar.Location = new System.Drawing.Point(16, 31);
+            this.ctlBatteryProgressBar.ManualText = "?";
+            this.ctlBatteryProgressBar.Name = "ctlBatteryProgressBar";
+            this.ctlBatteryProgressBar.Size = new System.Drawing.Size(545, 23);
+            this.ctlBatteryProgressBar.TabIndex = 12;
+            this.ctlBatteryProgressBar.TextColor = System.Drawing.Color.White;
+            // 
+            // ctlBatteryGroupBox
+            // 
+            this.ctlBatteryGroupBox.Controls.Add(this.ctlBatteryUpdate);
+            this.ctlBatteryGroupBox.Controls.Add(this.ctlBatteryProgressBar);
+            this.ctlBatteryGroupBox.Location = new System.Drawing.Point(13, 586);
+            this.ctlBatteryGroupBox.Name = "ctlBatteryGroupBox";
+            this.ctlBatteryGroupBox.Size = new System.Drawing.Size(790, 75);
+            this.ctlBatteryGroupBox.TabIndex = 13;
+            this.ctlBatteryGroupBox.TabStop = false;
+            this.ctlBatteryGroupBox.Text = "Battery (only Bluetooth):";
+            // 
+            // ctlBatteryUpdate
+            // 
+            this.ctlBatteryUpdate.Location = new System.Drawing.Point(578, 26);
+            this.ctlBatteryUpdate.Name = "ctlBatteryUpdate";
+            this.ctlBatteryUpdate.Size = new System.Drawing.Size(195, 33);
+            this.ctlBatteryUpdate.TabIndex = 14;
+            this.ctlBatteryUpdate.Text = "Update Battery";
+            this.ctlBatteryUpdate.UseVisualStyleBackColor = true;
+            this.ctlBatteryUpdate.Click += new System.EventHandler(this.ctlBatteryUpdate_Click);
             // 
             // Main
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(815, 582);
+            this.ClientSize = new System.Drawing.Size(815, 675);
+            this.Controls.Add(this.ctlBatteryGroupBox);
             this.Controls.Add(this.groupBox4);
             this.Controls.Add(this.groupBox3);
             this.Controls.Add(this.ctlFocusHack);
             this.Controls.Add(this.groupBox2);
             this.Controls.Add(this.groupBox1);
             this.Controls.Add(this.ctlApply);
-            this.Controls.Add(this.ctlInstallDriver);
+            this.Controls.Add(this.ctlTouchpadSettings);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MaximizeBox = false;
@@ -357,6 +393,7 @@ namespace AmtPtpControlPanel
             this.groupBox3.PerformLayout();
             this.groupBox4.ResumeLayout(false);
             this.groupBox4.PerformLayout();
+            this.ctlBatteryGroupBox.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -364,7 +401,7 @@ namespace AmtPtpControlPanel
 
         #endregion
 
-        private System.Windows.Forms.Button ctlInstallDriver;
+        private System.Windows.Forms.Button ctlTouchpadSettings;
         private System.Windows.Forms.Button ctlApply;
         private System.Windows.Forms.TrackBar ctlFeedback;
         private System.Windows.Forms.Label ctlLightLabel;
@@ -389,6 +426,9 @@ namespace AmtPtpControlPanel
         private System.Windows.Forms.CheckBox ctlIgnoreButtonFinger;
         private System.Windows.Forms.CheckBox ctlIgnoreNearFingers;
         private System.Windows.Forms.CheckBox ctlPalmRejection;
+        private ProgressBarWithPercentage ctlBatteryProgressBar;
+        private System.Windows.Forms.GroupBox ctlBatteryGroupBox;
+        private System.Windows.Forms.Button ctlBatteryUpdate;
     }
 }
 

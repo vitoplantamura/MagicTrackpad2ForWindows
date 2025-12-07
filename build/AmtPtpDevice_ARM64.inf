@@ -1,0 +1,171 @@
+;
+; AmtPtpDevice.inf
+;
+
+[Version]
+Signature = "$WINDOWS NT$"
+Class = HIDClass
+ClassGuid = {745a17a0-74d3-11d0-b6fe-00a0c90f57da}
+Provider = %ManufacturerName%
+CatalogFile = AmtPtpDevice.cat
+DriverVer = 12/06/2025,2025.3980.1.1000
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 13
+PtpUmDrivers_Dir = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+AmtPtpDeviceUsbUm.dll = 1,,
+AmtPtpHidFilter.sys   = 1,,
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTARM64
+
+[Standard.NTARM64]
+; Traditional Mac trackpad
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0236&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0237&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0238&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0245&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0246&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0247&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0249&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_024a&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_024b&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_024c&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_024d&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_024e&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0252&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0253&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0254&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0259&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_025a&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_025b&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0262&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0263&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0264&MI_01
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0272&MI_02
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0273&MI_02
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0274&MI_02
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0290&MI_02
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0291&MI_02
+
+; Magic Trackpad 2 USB
+; Note: this will be a last few versions where Magic Trackpad 2 uses this old implementation
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0265&MI_01
+; MT2 USB-C
+%AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0324&MI_01
+; Magic Trackpad 2 Bluetooth
+%AmtPtpHidFilter.DeviceDesc%=AmtPtpHidFilter_MiniPortDevice, HID\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0265&Col01
+%AmtPtpHidFilter.NullDeviceDesc%=AmtPtpHidFilter_NullDevice, HID\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0265&Col02
+; Magic Trackpad 2 USB-C Bluetooth
+%AmtPtpHidFilter.DeviceDesc%=AmtPtpHidFilter_MiniPortDevice, HID\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0324&Col01
+%AmtPtpHidFilter.NullDeviceDesc%=AmtPtpHidFilter_NullDevice, HID\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0324&Col02
+
+; Null Device
+[AmtPtpHidFilter_NullDevice]
+; Nothing!
+
+[AmtPtpHidFilter_NullDevice.Services]
+AddService = ,2    ; no value for the service name
+
+; File payloads for each set of driver
+[FilterDriver_Payload]
+AmtPtpHidFilter.sys
+
+[PtpUmDrivers_Dir]
+AmtPtpDeviceUsbUm.dll
+
+; Microsoft HID KMDF driver install sections
+[mshidkmdf_Service_Inst]
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\mshidkmdf.sys
+
+; PTP filter
+[AmtPtpHidFilter_MiniPortDevice.NT]
+CopyFiles=FilterDriver_Payload
+
+[AmtPtpHidFilter_MiniPortDevice.NT.Services]
+AddService = AmtPtpHidFilter,, AmtPtpHidFilter_Service_Inst
+AddService = mshidkmdf, %SPSVCINST_ASSOCSERVICE%, mshidkmdf_Service_Inst
+
+[AmtPtpHidFilter_MiniPortDevice.NT.HW]
+AddReg=AmtPtpHidFilter_AddReg
+
+[AmtPtpHidFilter_AddReg]
+HKR,,FriendlyName,,%AmtPtpHidFilter.DeviceDesc%
+HKR,,"LowerFilters",0x00010008,"AmtPtpHidFilter"
+
+[AmtPtpHidFilter_MiniPortDevice.NT.Wdf]
+KmdfService = AmtPtpHidFilter, AmtPtpHidFilter_wdfsect
+
+[AmtPtpHidFilter_Service_Inst]
+DisplayName    = %AmtPtpHidFilter.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %13%\AmtPtpHidFilter.sys
+
+[AmtPtpHidFilter_wdfsect]
+KmdfLibraryVersion = 1.15
+
+; USB UM
+[AmtPtpDeviceUsbUm_Install.NT]
+CopyFiles=PtpUmDrivers_Dir
+
+[AmtPtpDeviceUsbUm_Install.NT.hw]
+AddReg=AmtPtpDeviceUsbUm_AddReg
+
+[AmtPtpDeviceUsbUm_Install.NT.Services]
+AddService=mshidumdf, 0x000001fa, MSHIDUMDF_ServiceInstall ; flag 0x2 sets this as the service for the device
+AddService=WUDFRd,0x000001f8,WUDFRD_ServiceInstall         ; this service is installed because its a filter.
+
+[AmtPtpDeviceUsbUm_Install.NT.Wdf]
+UmdfDispatcher=NativeUSB
+UmdfService=AmtPtpDeviceUsbUm,AmtPtpDeviceUsbUm_Install
+UmdfServiceOrder=AmtPtpDeviceUsbUm
+UmdfKernelModeClientPolicy=AllowKernelModeClients
+UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
+UmdfMethodNeitherAction=Copy
+UmdfFsContextUsePolicy=CanUseFsContext2
+UmdfHostPriority=PriorityHigh
+
+[AmtPtpDeviceUsbUm_Install]
+UmdfLibraryVersion=2.15.0
+ServiceBinary=%13%\AmtPtpDeviceUsbUm.dll
+
+[AmtPtpDeviceUsbUm_AddReg]
+HKR,,FriendlyName,,%AmtPtpDeviceUsbUm.DeviceDesc%
+HKR,,"LowerFilters",0x00010008,"WUDFRd" ; FLG_ADDREG_TYPE_MULTI_SZ | FLG_ADDREG_APPEND
+
+[mshidumdf_ServiceInstall]
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\mshidumdf.sys
+
+[WUDFRD_ServiceInstall]
+DisplayName = %WudfRdDisplayName%
+ServiceType = 1
+StartType = 3
+ErrorControl = 1
+ServiceBinary = %12%\WUDFRd.sys
+
+[Strings]
+REG_MULTI_SZ = 0x00010000
+SPSVCINST_ASSOCSERVICE = 0x00000002
+ManufacturerName = "Bingxing Wang, Vito Plantamura"
+ClassName = "Universal Serial Bus devices"
+DiskName = "AmtPtpDeviceUsbKm Installation Disk"
+AmtPtpDeviceUsbUm.DeviceDesc = "Apple USB Precision Touchpad Device (User-mode)"
+AmtPtpHidRootDevice.DeviceDesc = "Apple Multi-touch Trackpad HID Device"
+AmtPtpHidFilter.DeviceDesc = "Apple Multi-touch Trackpad HID Filter"
+AmtPtpHidFilter.NullDeviceDesc = "Apple Multi-touch Auxiliary Services"
+AmtPtpHidFilter.SVCDESC = "Apple Multi-touch Trackpad HID Filter Service"
+WudfRdDisplayName = "Windows Driver Foundation - User-mode Driver Framework Reflector"

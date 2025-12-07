@@ -26,194 +26,25 @@ namespace AmtPtpControlPanel
             InitializeComponent();
         }
 
-        private void ctlInstallDriver_Click(object sender, EventArgs e)
+        private void ctlTouchpadSettings_Click(object sender, EventArgs e)
         {
-            bool isArm64 = ArchitectureInfo.IsArm64();
-
-            string fn = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                @"System32\DriverStore\FileRepository\amtptpdevice.inf_" + (isArm64 ? "arm64_fd8449c22cc620c8" : "amd64_5de6239780ba286e") + @"\AmtPtpDeviceUsbUm.dll");
-            string src = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location),
-                @"AmtPtpDeviceUsbUm" + (isArm64 ? "_ARM64" : "_AMD64") + ".dll");
-
-            Action<string> showErr = (string str) =>
+            try
             {
-                MessageBox.Show(str, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            };
-
-            if (!File.Exists(src))
-            {
-                showErr("\"" + src + "\" doesn't exist.");
-                return;
+                Process.Start("ms-settings:devices-touchpad");
             }
-
-            if (!File.Exists(fn))
+            catch
             {
-                showErr("\"" + fn + "\" doesn't exist.");
-                return;
             }
-
-            List<string> errs = new List<string>();
-            Action<string, Exception> err = (string str, Exception ex) =>
-            {
-                errs.Add(str + (ex == null ? "" : ": " + ex.ToString()));
-            };
-
-            Action replaceDriver = () =>
-            {
-                try
-                {
-                    if (!TokenManipulator.AddPrivilege("SeRestorePrivilege"))
-                        throw new Exception("TokenManipulator.AddPrivilege of SeRestorePrivilege returned FALSE.");
-                    if (!TokenManipulator.AddPrivilege("SeTakeOwnershipPrivilege"))
-                        throw new Exception("TokenManipulator.AddPrivilege of SeTakeOwnershipPrivilege returned FALSE.");
-                }
-                catch (Exception ex)
-                {
-                    try
-                    {
-                        TokenManipulator.RemovePrivilege("SeRestorePrivilege");
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        TokenManipulator.RemovePrivilege("SeTakeOwnershipPrivilege");
-                    }
-                    catch
-                    {
-                    }
-
-                    err("AddPrivilege failed", ex);
-                    return;
-                }
-
-                NTAccount prevOwner = null;
-                try
-                {
-                    var fs = File.GetAccessControl(fn);
-                    prevOwner = (NTAccount)fs.GetOwner(typeof(NTAccount));
-                }
-                catch (Exception ex)
-                {
-                    err("GetOwner failed", ex);
-                }
-
-                bool ownerSet = false;
-                if (prevOwner != null)
-                    try
-                    {
-                        var fs = File.GetAccessControl(fn);
-                        fs.SetOwner(WindowsIdentity.GetCurrent().User);
-                        File.SetAccessControl(fn, fs);
-                        ownerSet = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        err("SetOwner #1 failed", ex);
-                    }
-
-                FileSystemAccessRule accessRule = null;
-                if (ownerSet)
-                    try
-                    {
-                        accessRule = new FileSystemAccessRule(
-                            WindowsIdentity.GetCurrent().User,
-                            FileSystemRights.FullControl,
-                            InheritanceFlags.None,
-                            PropagationFlags.NoPropagateInherit,
-                            AccessControlType.Allow);
-                    }
-                    catch (Exception ex)
-                    {
-                        err("FileSystemAccessRule creation failed", ex);
-                    }
-
-                bool accessRuleAdded = false;
-                if (accessRule != null)
-                    try
-                    {
-                        var fs = File.GetAccessControl(fn);
-                        fs.AddAccessRule(accessRule);
-                        File.SetAccessControl(fn, fs);
-                        accessRuleAdded = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        err("AddAccessRule failed", ex);
-                    }
-
-                if (accessRuleAdded)
-                    try
-                    {
-                        File.Copy(src, fn, true);
-                    }
-                    catch (Exception ex)
-                    {
-                        err("Copy failed", ex);
-                    }
-
-                if (accessRuleAdded)
-                    try
-                    {
-                        var fs = File.GetAccessControl(fn);
-                        fs.RemoveAccessRule(accessRule);
-                        File.SetAccessControl(fn, fs);
-                    }
-                    catch (Exception ex)
-                    {
-                        err("RemoveAccessRule failed", ex);
-                    }
-
-                if (prevOwner != null)
-                    try
-                    {
-                        var fs = File.GetAccessControl(fn);
-                        fs.SetOwner(prevOwner);
-                        File.SetAccessControl(fn, fs);
-                    }
-                    catch (Exception ex)
-                    {
-                        err("SetOwner #2 failed", ex);
-                    }
-
-                try
-                {
-                    if (!TokenManipulator.RemovePrivilege("SeRestorePrivilege"))
-                        throw new Exception("TokenManipulator.RemovePrivilege of SeRestorePrivilege returned FALSE.");
-                }
-                catch (Exception ex)
-                {
-                    err("RemovePrivilege failed", ex);
-                }
-
-                try
-                {
-                    if (!TokenManipulator.RemovePrivilege("SeTakeOwnershipPrivilege"))
-                        throw new Exception("TokenManipulator.RemovePrivilege of SeTakeOwnershipPrivilege returned FALSE.");
-                }
-                catch (Exception ex)
-                {
-                    err("RemovePrivilege failed", ex);
-                }
-            };
-
-            using (new ButtonWait((Button)sender))
-                Device.RestartDevices(replaceDriver);
-
-            if (errs.Count == 0)
-                MessageBox.Show("Operation succeeded!");
-            else
-                foreach (string errStr in errs)
-                    showErr(errStr);
         }
 
         private void ctlApply_Click(object sender, EventArgs e)
         {
             using (new ButtonWait((Button)sender))
                 if (SaveSettings())
-                    Device.RestartDevices();
+                {
+                    UsbDevice.RestartDevices();
+                    BtDevice.SendIoctl(BtDevice.IOCTL_RELOAD_SETTINGS);
+                }
         }
 
         private void ctlClickOptions_CheckedChanged(object sender, EventArgs e)
@@ -251,10 +82,27 @@ namespace AmtPtpControlPanel
                 ctlStopSize.Checked = true;
         }
 
+        private void ctlBatteryUpdate_Click(object sender, EventArgs e)
+        {
+            uint level;
+            if (BtDevice.SendIoctl(BtDevice.IOCTL_GET_BATTERY, out level, true) && level <= 100)
+            {
+                ctlBatteryProgressBar.DisplayType = ProgressBarWithPercentage.TextDisplayType.Percent;
+                ctlBatteryProgressBar.Value = (int)level;
+                ctlBatteryGroupBox.Text = "Battery (only Bluetooth): --- LAST UPDATED: " + DateTime.Now.ToString();
+            }
+        }
+
         private delegate void delStringRefInt32Void(string _1, ref Int32 _2);
 
         private void Main_Load(object sender, EventArgs e)
         {
+            ctlStopPressureValue.Location = new Point(ctlStopPressure.Right, ctlStopPressureValue.Location.Y);
+            ctlStopPressureLabel.Location = new Point(ctlStopPressureValue.Right, ctlStopPressureLabel.Location.Y);
+
+            ctlStopSizeValue.Location = new Point(ctlStopSize.Right, ctlStopSizeValue.Location.Y);
+            ctlStopSizeLabel.Location = new Point(ctlStopSizeValue.Right, ctlStopSizeLabel.Location.Y);
+
             Int32 buttonDisabled = 0;
             Int32 feedbackClick = 0x060617;
             Int32 feedbackRelease = 0x000014;
@@ -401,19 +249,25 @@ namespace AmtPtpControlPanel
 
             try
             {
-                using (RegistryKey keyServices = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\WUDF\Services", true))
-                using (RegistryKey keyAmtPtpDeviceUsbUm = keyServices.CreateSubKey("AmtPtpDeviceUsbUm", true))
-                using (RegistryKey keyParameters = keyAmtPtpDeviceUsbUm.CreateSubKey("Parameters", true))
+                Action<string, string> save = (string key, string name) =>
                 {
-                    keyParameters.SetValue("ButtonDisabled", buttonDisabled);
-                    keyParameters.SetValue("FeedbackClick", feedbackClick);
-                    keyParameters.SetValue("FeedbackRelease", feedbackRelease);
-                    keyParameters.SetValue("StopPressure", stopPressure);
-                    keyParameters.SetValue("StopSize", stopSize);
-                    keyParameters.SetValue("IgnoreButtonFinger", ignoreButtonFinger);
-                    keyParameters.SetValue("IgnoreNearFingers", ignoreNearFingers);
-                    keyParameters.SetValue("PalmRejection", palmRejection);
-                }
+                    using (RegistryKey keyServices = Registry.LocalMachine.OpenSubKey(key, true))
+                    using (RegistryKey keyAmtPtpDeviceUsbUm = keyServices.CreateSubKey(name, true))
+                    using (RegistryKey keyParameters = keyAmtPtpDeviceUsbUm.CreateSubKey("Parameters", true))
+                    {
+                        keyParameters.SetValue("ButtonDisabled", buttonDisabled);
+                        keyParameters.SetValue("FeedbackClick", feedbackClick);
+                        keyParameters.SetValue("FeedbackRelease", feedbackRelease);
+                        keyParameters.SetValue("StopPressure", stopPressure);
+                        keyParameters.SetValue("StopSize", stopSize);
+                        keyParameters.SetValue("IgnoreButtonFinger", ignoreButtonFinger);
+                        keyParameters.SetValue("IgnoreNearFingers", ignoreNearFingers);
+                        keyParameters.SetValue("PalmRejection", palmRejection);
+                    }
+                };
+
+                save(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\WUDF\Services", "AmtPtpDeviceUsbUm");
+                save(@"SYSTEM\CurrentControlSet\Services", "AmtPtpHidFilter");
             }
             catch (Exception ex)
             {
@@ -422,6 +276,145 @@ namespace AmtPtpControlPanel
             }
 
             return true;
+        }
+    }
+
+    //=================
+    // Custom controls
+    //=================
+
+    public class ProgressBarWithPercentage : ProgressBar // from: https://cowthulu.com/winforms-progressbar-with-text/
+    {
+        public const int WM_PAINT = 0xF;
+        public const int WS_EX_COMPOSITED = 0x2000_000;
+
+        private TextDisplayType _style = TextDisplayType.Percent;
+        private string _manualText = "";
+
+        public ProgressBarWithPercentage()
+        {
+        }
+
+        [Category("Appearance")]
+        [Description("What type of text to display on the progress bar.")]
+        public TextDisplayType DisplayType
+        {
+            get { return _style; }
+            set
+            {
+                _style = value;
+                Invalidate();
+            }
+        }
+
+        [Category("Appearance")]
+        [Description("If DisplayType is Manual, the text to display.")]
+        [Browsable(true), EditorBrowsable(EditorBrowsableState.Always)]
+        public string ManualText
+        {
+            get { return _manualText; }
+            set
+            {
+                _style = TextDisplayType.Manual;
+                _manualText = value;
+                Invalidate();
+            }
+        }
+
+        [Category("Appearance")]
+        [Description("Color of text on bar.")]
+        public Color TextColor { get; set; } = Color.White;
+
+        [Browsable(true), EditorBrowsable(EditorBrowsableState.Always)]
+        public override Font Font { get => base.Font; set => base.Font = value; }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams parms = base.CreateParams;
+                parms.ExStyle |= WS_EX_COMPOSITED;
+                return parms;
+            }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == WM_PAINT)
+                AdditionalPaint(m);
+        }
+
+        private void AdditionalPaint(Message m)
+        {
+            if (DisplayType == TextDisplayType.None)
+                return;
+
+            string text = GetDisplayText();
+
+            using (Graphics g = Graphics.FromHwnd(Handle))
+            {
+                Rectangle rect = new Rectangle(0, 0, Width, Height);
+                StringFormat format = new StringFormat(StringFormatFlags.NoWrap)
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+
+                // Define offsets for the outline (1 pixel in each diagonal direction gives a nice result)
+                Point[] offsets = {
+                    new Point(-1, -1), new Point(0, -1), new Point(1, -1),
+                    new Point(-1,  0),                   new Point(1,  0),
+                    new Point(-1,  1), new Point(0,  1), new Point(1,  1)
+                };
+
+                // Draw black outline
+                using (Brush outlineBrush = new SolidBrush(Color.Black))
+                {
+                    foreach (Point offset in offsets)
+                    {
+                        Rectangle outlineRect = new Rectangle(rect.X + offset.X, rect.Y + offset.Y, rect.Width, rect.Height);
+                        g.DrawString(text, Font, outlineBrush, outlineRect, format);
+                    }
+                }
+
+                // Draw main text on top
+                using (Brush textBrush = new SolidBrush(TextColor))
+                {
+                    g.DrawString(text, Font, textBrush, rect, format);
+                }
+            }
+        }
+
+        private string GetDisplayText()
+        {
+            string result = "";
+
+            switch (DisplayType)
+            {
+                case TextDisplayType.Percent:
+                    if (Maximum != 0)
+                        result = ((int)(((float)Value / (float)Maximum) * 100)).ToString() + " %";
+                    break;
+
+                case TextDisplayType.Count:
+                    result = Value.ToString() + " / " + Maximum.ToString();
+                    break;
+
+                case TextDisplayType.Manual:
+                    result = ManualText;
+                    break;
+            }
+
+            return result;
+        }
+
+        public enum TextDisplayType
+        {
+            None,
+            Percent,
+            Count,
+            Manual
         }
     }
 
@@ -456,144 +449,7 @@ namespace AmtPtpControlPanel
     // Low level stuff
     //=================
 
-    public class ArchitectureInfo
-    {
-        [DllImport("kernel32.dll", EntryPoint = "LoadLibrary")]
-        public static extern IntPtr LoadLibrary([MarshalAs(UnmanagedType.LPStr)] string lpLibFileName);
-        [DllImport("kernel32.dll", EntryPoint = "GetProcAddress")]
-        public static extern IntPtr GetProcAddress(IntPtr hModule, [MarshalAs(UnmanagedType.LPStr)] string lpProcName);
-        [DllImport("kernel32.dll", EntryPoint = "FreeLibrary")]
-        public static extern bool FreeLibrary(IntPtr hModule);
-
-        [UnmanagedFunctionPointer(CallingConvention.Winapi)]
-        public delegate bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
-
-        public static bool IsArm64()
-        {
-            IntPtr lib = LoadLibrary(@"kernel32.dll");
-
-            IntPtr pfn = GetProcAddress(lib, "IsWow64Process2");
-            if (pfn == IntPtr.Zero)
-                return false;
-
-            IsWow64Process2 isWow64Process2 = (IsWow64Process2)Marshal.GetDelegateForFunctionPointer(pfn, typeof(IsWow64Process2));
-
-            if (!isWow64Process2(Process.GetCurrentProcess().Handle, out var processMachine, out var nativeMachine))
-                return false;
-
-            return nativeMachine == 0xaa64;
-        }
-    }
-
-    public class TokenManipulator // https://stackoverflow.com/questions/17031552/how-do-you-take-file-ownership-with-powershell/17047190#17047190
-    {
-        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
-        internal static extern bool AdjustTokenPrivileges(IntPtr htok, bool disall, ref TokPriv1Luid newst, int len, IntPtr prev, IntPtr relen);
-
-        [DllImport("kernel32.dll", ExactSpelling = true)]
-        internal static extern IntPtr GetCurrentProcess();
-
-        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
-        internal static extern bool OpenProcessToken(IntPtr h, int acc, ref IntPtr phtok);
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        internal static extern bool LookupPrivilegeValue(string host, string name, ref long pluid);
-
-        [StructLayout(LayoutKind.Sequential, Pack = 1)]
-        internal struct TokPriv1Luid
-        {
-            public int Count;
-            public long Luid;
-            public int Attr;
-        }
-
-        internal const int SE_PRIVILEGE_DISABLED = 0x00000000;
-        internal const int SE_PRIVILEGE_ENABLED = 0x00000002;
-        internal const int TOKEN_QUERY = 0x00000008;
-        internal const int TOKEN_ADJUST_PRIVILEGES = 0x00000020;
-
-        public const string SE_ASSIGNPRIMARYTOKEN_NAME = "SeAssignPrimaryTokenPrivilege";
-        public const string SE_AUDIT_NAME = "SeAuditPrivilege";
-        public const string SE_BACKUP_NAME = "SeBackupPrivilege";
-        public const string SE_CHANGE_NOTIFY_NAME = "SeChangeNotifyPrivilege";
-        public const string SE_CREATE_GLOBAL_NAME = "SeCreateGlobalPrivilege";
-        public const string SE_CREATE_PAGEFILE_NAME = "SeCreatePagefilePrivilege";
-        public const string SE_CREATE_PERMANENT_NAME = "SeCreatePermanentPrivilege";
-        public const string SE_CREATE_SYMBOLIC_LINK_NAME = "SeCreateSymbolicLinkPrivilege";
-        public const string SE_CREATE_TOKEN_NAME = "SeCreateTokenPrivilege";
-        public const string SE_DEBUG_NAME = "SeDebugPrivilege";
-        public const string SE_ENABLE_DELEGATION_NAME = "SeEnableDelegationPrivilege";
-        public const string SE_IMPERSONATE_NAME = "SeImpersonatePrivilege";
-        public const string SE_INC_BASE_PRIORITY_NAME = "SeIncreaseBasePriorityPrivilege";
-        public const string SE_INCREASE_QUOTA_NAME = "SeIncreaseQuotaPrivilege";
-        public const string SE_INC_WORKING_SET_NAME = "SeIncreaseWorkingSetPrivilege";
-        public const string SE_LOAD_DRIVER_NAME = "SeLoadDriverPrivilege";
-        public const string SE_LOCK_MEMORY_NAME = "SeLockMemoryPrivilege";
-        public const string SE_MACHINE_ACCOUNT_NAME = "SeMachineAccountPrivilege";
-        public const string SE_MANAGE_VOLUME_NAME = "SeManageVolumePrivilege";
-        public const string SE_PROF_SINGLE_PROCESS_NAME = "SeProfileSingleProcessPrivilege";
-        public const string SE_RELABEL_NAME = "SeRelabelPrivilege";
-        public const string SE_REMOTE_SHUTDOWN_NAME = "SeRemoteShutdownPrivilege";
-        public const string SE_RESTORE_NAME = "SeRestorePrivilege";
-        public const string SE_SECURITY_NAME = "SeSecurityPrivilege";
-        public const string SE_SHUTDOWN_NAME = "SeShutdownPrivilege";
-        public const string SE_SYNC_AGENT_NAME = "SeSyncAgentPrivilege";
-        public const string SE_SYSTEM_ENVIRONMENT_NAME = "SeSystemEnvironmentPrivilege";
-        public const string SE_SYSTEM_PROFILE_NAME = "SeSystemProfilePrivilege";
-        public const string SE_SYSTEMTIME_NAME = "SeSystemtimePrivilege";
-        public const string SE_TAKE_OWNERSHIP_NAME = "SeTakeOwnershipPrivilege";
-        public const string SE_TCB_NAME = "SeTcbPrivilege";
-        public const string SE_TIME_ZONE_NAME = "SeTimeZonePrivilege";
-        public const string SE_TRUSTED_CREDMAN_ACCESS_NAME = "SeTrustedCredManAccessPrivilege";
-        public const string SE_UNDOCK_NAME = "SeUndockPrivilege";
-        public const string SE_UNSOLICITED_INPUT_NAME = "SeUnsolicitedInputPrivilege";
-
-        public static bool AddPrivilege(string privilege)
-        {
-            try
-            {
-                bool retVal;
-                TokPriv1Luid tp;
-                IntPtr hproc = GetCurrentProcess();
-                IntPtr htok = IntPtr.Zero;
-                retVal = OpenProcessToken(hproc, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, ref htok);
-                tp.Count = 1;
-                tp.Luid = 0;
-                tp.Attr = SE_PRIVILEGE_ENABLED;
-                retVal = LookupPrivilegeValue(null, privilege, ref tp.Luid);
-                retVal = AdjustTokenPrivileges(htok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
-                return retVal;
-            }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
-        }
-
-        public static bool RemovePrivilege(string privilege)
-        {
-            try
-            {
-                bool retVal;
-                TokPriv1Luid tp;
-                IntPtr hproc = GetCurrentProcess();
-                IntPtr htok = IntPtr.Zero;
-                retVal = OpenProcessToken(hproc, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, ref htok);
-                tp.Count = 1;
-                tp.Luid = 0;
-                tp.Attr = SE_PRIVILEGE_DISABLED;
-                retVal = LookupPrivilegeValue(null, privilege, ref tp.Luid);
-                retVal = AdjustTokenPrivileges(htok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
-                return retVal;
-            }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
-        }
-    }
-
-    public class Device
+    public class UsbDevice
     {
         public static bool RestartDevices(Action action = null)
         {
@@ -717,5 +573,126 @@ namespace AmtPtpControlPanel
              IntPtr DeviceInfoSet,
              ref SP_DEVINFO_DATA DeviceInfoData
         );
+    }
+
+    class BtDevice
+    {
+        private const uint FILE_DEVICE_UNKNOWN = 0x00000022;
+        private const uint METHOD_BUFFERED = 0;
+        private const uint FILE_ANY_ACCESS = 0;
+
+        private static uint CTL_CODE(uint deviceType, uint function, uint method, uint access)
+        {
+            return (deviceType << 16) | (access << 14) | (function << 2) | method;
+        }
+
+        public static readonly uint IOCTL_RELOAD_SETTINGS = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS);
+        public static readonly uint IOCTL_GET_BATTERY = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS);
+
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint GENERIC_WRITE = 0x40000000;
+        private const uint OPEN_EXISTING = 3;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern SafeFileHandle CreateFile(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile
+        );
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool DeviceIoControl(
+            SafeFileHandle hDevice,
+            uint dwIoControlCode,
+            IntPtr lpInBuffer,
+            uint nInBufferSize,
+            IntPtr lpOutBuffer,
+            uint nOutBufferSize,
+            out uint lpBytesReturned,
+            IntPtr lpOverlapped
+        );
+
+        public static bool SendIoctl(uint code, bool showMessageBox = false)
+        {
+            return ExecuteIoctl(code, out _, false, showMessageBox);
+        }
+
+        public static bool SendIoctl(uint code, out uint result, bool showMessageBox = false)
+        {
+            return ExecuteIoctl(code, out result, true, showMessageBox);
+        }
+
+        private static bool ExecuteIoctl(uint code, out uint result, bool expectData, bool showMessageBox)
+        {
+            result = 0;
+            SafeFileHandle hDevice = null;
+            IntPtr pOutBuffer = IntPtr.Zero;
+
+            try
+            {
+                hDevice = CreateFile(
+                    @"\\.\AmtPtpControlDeviceUm",
+                    GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    IntPtr.Zero,
+                    OPEN_EXISTING,
+                    0,
+                    IntPtr.Zero
+                );
+
+                if (hDevice.IsInvalid)
+                {
+                    if (showMessageBox)
+                    {
+                        MessageBox.Show($"Failed to open device. Error: {Marshal.GetLastWin32Error()}");
+                    }
+                    return false;
+                }
+
+                uint outBufferSize = 0;
+                if (expectData)
+                {
+                    outBufferSize = sizeof(uint);
+                    pOutBuffer = Marshal.AllocHGlobal((int)outBufferSize);
+                }
+
+                bool success = DeviceIoControl(
+                    hDevice,
+                    code,
+                    IntPtr.Zero,
+                    0,
+                    pOutBuffer,
+                    outBufferSize,
+                    out _,
+                    IntPtr.Zero
+                );
+
+                if (success && expectData)
+                {
+                    result = (uint)Marshal.ReadInt32(pOutBuffer);
+                }
+
+                if (!success && showMessageBox)
+                {
+                    MessageBox.Show($"DeviceIoControl failed. Error: {Marshal.GetLastWin32Error()}");
+                }
+
+                return success;
+            }
+            finally
+            {
+                if (pOutBuffer != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(pOutBuffer);
+                }
+                hDevice?.Dispose();
+            }
+        }
     }
 }

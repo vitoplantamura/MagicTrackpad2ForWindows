@@ -1,5 +1,7 @@
 .vs/
 bin/
 obj/
-build/
+AmtPtpDeviceUsbUm/build/
+AmtPtpHidFilter/build/
 intermediate/
+build/result/
