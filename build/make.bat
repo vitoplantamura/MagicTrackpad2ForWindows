@@ -4,6 +4,9 @@ setlocal
 echo ------------------------------------------------------------------------------------------------
 echo Please install Visual Studio 2022 following this guide (only Step 1, 2 and 3 are required):
 echo   https://learn.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk
+echo IMPORTANT: SDK and WDK are downloaded automatically with NuGet. However the "Windows Driver Kit"
+echo individual component is still required. To restore NuGet packages, please run this command:
+echo   NuGet.exe restore ..\AmtPtpHidFilter\packages.config -PackagesDirectory ..\packages\
 echo Also please make sure that the ".NET desktop development" workload is selected during install.
 echo Then start this bat file from "x64 Native Tools Command Prompt for VS 2022".
 echo ------------------------------------------------------------------------------------------------
