@@ -1,0 +1,60 @@
+on: workflow_dispatch
+
+jobs:
+  build:
+    name: Build Driver Package and Control Panel
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        #with:
+        #  repository: vitoplantamura/MagicTrackpad2ForWindows
+        #  ref: master
+
+      - name: Create Source Tarball
+        shell: bash
+        id: create_tarball
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+          mkdir .tarball
+          tar -czf .tarball/source-${COMMIT_SHA}.tar.gz --exclude='.git' --exclude='.tarball' .
+
+      - name: Upload Source Tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-code-${{ steps.create_tarball.outputs.commit_sha }}
+          path: .tarball/source-${{ steps.create_tarball.outputs.commit_sha }}.tar.gz
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore NuGet Packages
+        run: |
+          nuget restore ./AmtPtpDeviceUsbUm/MagicTrackpad2PtpDevice.vcxproj -PackagesDirectory ${{ github.workspace }}\packages
+          nuget restore ./AmtPtpHidFilter/AmtPtpHidFilter.vcxproj -PackagesDirectory ${{ github.workspace }}\packages
+          
+      - name: Build
+        shell: bash
+        run: |
+          sed -i 's|</TimeStampServer>|</TimeStampServer><ApiValidator_Enable>false</ApiValidator_Enable>|g' ./AmtPtpDeviceUsbUm/MagicTrackpad2PtpDevice.vcxproj
+          sed -i 's|</TimeStampServer>|</TimeStampServer><ApiValidator_Enable>false</ApiValidator_Enable>|g' ./AmtPtpHidFilter/AmtPtpHidFilter.vcxproj
+          msbuild.exe ./AmtPtpDeviceUsbUm/MagicTrackpad2PtpDevice.vcxproj -p:Configuration=Release -p:Platform=x64
+          msbuild.exe ./AmtPtpHidFilter/AmtPtpHidFilter.vcxproj -p:Configuration=Release -p:Platform=x64
+          msbuild.exe ./AmtPtpDeviceUsbUm/MagicTrackpad2PtpDevice.vcxproj -p:Configuration=Release -p:Platform=ARM64
+          msbuild.exe ./AmtPtpHidFilter/AmtPtpHidFilter.vcxproj -p:Configuration=Release -p:Platform=ARM64
+          msbuild.exe ./AmtPtpControlPanel/AmtPtpControlPanel.csproj -p:Configuration=Release -p:Platform=AnyCPU
+          echo -e '.OPTION EXPLICIT\n.Set CabinetFileCountThreshold=0\n.Set FolderFileCountThreshold=0\n.Set FolderSizeThreshold=0\n.Set MaxCabinetSize=0\n.Set MaxDiskFileCount=0\n.Set MaxDiskSize=0\n.Set CompressionType=MSZIP\n.Set Cabinet=on\n.Set Compress=on\n.Set CabinetNameTemplate=drivers.cab\n.Set DestinationDir=AMD64\nbuild\\AmtPtpDevice_AMD64.inf\tAmtPtpDevice.inf\nAmtPtpDeviceUsbUm\\build\\AmtPtpDeviceUsbUm\\x64\\Release\\AmtPtpDeviceUsbUm.dll\nAmtPtpHidFilter\\build\\AmtPtpHidFilter\\x64\\Release\\AmtPtpHidFilter.sys\nAmtPtpDeviceUsbUm\\build\\AmtPtpDeviceUsbUm\\x64\\Release\\AmtPtpDeviceUsbUm.pdb\nAmtPtpHidFilter\\build\\AmtPtpHidFilter\\x64\\Release\\AmtPtpHidFilter.pdb\n.Set DestinationDir=ARM64\nbuild\\AmtPtpDevice_ARM64.inf\tAmtPtpDevice.inf\nAmtPtpDeviceUsbUm\\build\\AmtPtpDeviceUsbUm\\ARM64\\Release\\AmtPtpDeviceUsbUm.dll\nAmtPtpHidFilter\\build\\AmtPtpHidFilter\\ARM64\\Release\\AmtPtpHidFilter.sys\nAmtPtpDeviceUsbUm\\build\\AmtPtpDeviceUsbUm\\ARM64\\Release\\AmtPtpDeviceUsbUm.pdb\nAmtPtpHidFilter\\build\\AmtPtpHidFilter\\ARM64\\Release\\AmtPtpHidFilter.pdb\n' > drivers.ddf
+          makecab -f drivers.ddf
+          mkdir result
+          cp AmtPtpControlPanel/bin/Release/AmtPtpControlPanel.exe result/
+          mv disk1/drivers.cab result/.
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: result
+          path: result/
