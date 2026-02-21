@@ -23,9 +23,9 @@ AmtPtpDeviceUsbUm.dll = 1,,
 AmtPtpHidFilter.sys   = 1,,
 
 [Manufacturer]
-%ManufacturerName%=Standard,NTARM64
+%ManufacturerName%=Standard,NTARM64.10.0...17134
 
-[Standard.NTARM64]
+[Standard.NTARM64.10.0...17134]
 ; Traditional Mac trackpad
 %AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0236&MI_01
 %AmtPtpDeviceUsbUm.DeviceDesc%=AmtPtpDeviceUsbUm_Install, USB\Vid_05ac&Pid_0237&MI_01
@@ -80,20 +80,16 @@ AmtPtpHidFilter.sys
 [PtpUmDrivers_Dir]
 AmtPtpDeviceUsbUm.dll
 
-; Microsoft HID KMDF driver install sections
-[mshidkmdf_Service_Inst]
-ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
-StartType      = 3                  ; SERVICE_DEMAND_START
-ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
-ServiceBinary  = %10%\System32\Drivers\mshidkmdf.sys
-
 ; PTP filter
 [AmtPtpHidFilter_MiniPortDevice.NT]
 CopyFiles=FilterDriver_Payload
+Include=mshidioc.inf
+Needs=mshidkmdf.NT
 
 [AmtPtpHidFilter_MiniPortDevice.NT.Services]
 AddService = AmtPtpHidFilter,, AmtPtpHidFilter_Service_Inst
-AddService = mshidkmdf, %SPSVCINST_ASSOCSERVICE%, mshidkmdf_Service_Inst
+Include=mshidioc.inf
+Needs=mshidkmdf.NT.Services
 
 [AmtPtpHidFilter_MiniPortDevice.NT.HW]
 AddReg=AmtPtpHidFilter_AddReg
@@ -118,13 +114,15 @@ KmdfLibraryVersion = 1.15
 ; USB UM
 [AmtPtpDeviceUsbUm_Install.NT]
 CopyFiles=PtpUmDrivers_Dir
+Include=mshidioc.inf, wudfrd.inf
+Needs=mshidumdf.NT, WUDFRD.NT
 
 [AmtPtpDeviceUsbUm_Install.NT.hw]
 AddReg=AmtPtpDeviceUsbUm_AddReg
 
 [AmtPtpDeviceUsbUm_Install.NT.Services]
-AddService=mshidumdf, 0x000001fa, MSHIDUMDF_ServiceInstall ; flag 0x2 sets this as the service for the device
-AddService=WUDFRd,0x000001f8,WUDFRD_ServiceInstall         ; this service is installed because its a filter.
+Include=mshidioc.inf, wudfrd.inf
+Needs=mshidumdf.NT.Services, WUDFRD.NT.Services
 
 [AmtPtpDeviceUsbUm_Install.NT.Wdf]
 UmdfDispatcher=NativeUSB
@@ -143,19 +141,6 @@ ServiceBinary=%13%\AmtPtpDeviceUsbUm.dll
 [AmtPtpDeviceUsbUm_AddReg]
 HKR,,FriendlyName,,%AmtPtpDeviceUsbUm.DeviceDesc%
 HKR,,"LowerFilters",0x00010008,"WUDFRd" ; FLG_ADDREG_TYPE_MULTI_SZ | FLG_ADDREG_APPEND
-
-[mshidumdf_ServiceInstall]
-ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
-StartType      = 3                  ; SERVICE_DEMAND_START
-ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
-ServiceBinary  = %12%\mshidumdf.sys
-
-[WUDFRD_ServiceInstall]
-DisplayName = %WudfRdDisplayName%
-ServiceType = 1
-StartType = 3
-ErrorControl = 1
-ServiceBinary = %12%\WUDFRd.sys
 
 [Strings]
 REG_MULTI_SZ = 0x00010000
