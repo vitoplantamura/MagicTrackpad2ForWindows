@@ -83,13 +83,13 @@ AmtPtpDeviceUsbUm.dll
 ; PTP filter
 [AmtPtpHidFilter_MiniPortDevice.NT]
 CopyFiles=FilterDriver_Payload
-Include=mshidioc.inf
-Needs=mshidkmdf.NT
+Include=MsHidKmdf.inf
+Needs=MsHidKmdf.NT
 
 [AmtPtpHidFilter_MiniPortDevice.NT.Services]
 AddService = AmtPtpHidFilter,, AmtPtpHidFilter_Service_Inst
-Include=mshidioc.inf
-Needs=mshidkmdf.NT.Services
+Include=MsHidKmdf.inf
+Needs=MsHidKmdf.NT.Services
 
 [AmtPtpHidFilter_MiniPortDevice.NT.HW]
 AddReg=AmtPtpHidFilter_AddReg
@@ -114,15 +114,15 @@ KmdfLibraryVersion = 1.15
 ; USB UM
 [AmtPtpDeviceUsbUm_Install.NT]
 CopyFiles=PtpUmDrivers_Dir
-Include=mshidioc.inf, wudfrd.inf
-Needs=mshidumdf.NT, WUDFRD.NT
+Include=MsHidUmdf.inf, WUDFRD.inf
+Needs=MsHidUmdf.NT, WUDFRD.NT
 
 [AmtPtpDeviceUsbUm_Install.NT.hw]
 AddReg=AmtPtpDeviceUsbUm_AddReg
 
 [AmtPtpDeviceUsbUm_Install.NT.Services]
-Include=mshidioc.inf, wudfrd.inf
-Needs=mshidumdf.NT.Services, WUDFRD.NT.Services
+Include=MsHidUmdf.inf, WUDFRD.inf
+Needs=MsHidUmdf.NT.Services, WUDFRD.NT.Services
 
 [AmtPtpDeviceUsbUm_Install.NT.Wdf]
 UmdfDispatcher=NativeUSB
