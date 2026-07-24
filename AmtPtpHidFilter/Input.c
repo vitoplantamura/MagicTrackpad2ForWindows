@@ -196,7 +196,10 @@ PtpFilterInputParseMT2Report(
 		// 0x4 = Contact/Valid
 		// I've gotten 0x6 if I press on the trackpad and then keep my finger close
 		// Note: These values come from my MBP9,2. These also are valid on my MT2
-		ptpOutputReport.Contacts[i].TipSwitch = (f->State & 0x4) && (driverContext->IgnoreNearFingers == FALSE ? TRUE : !(f->State & 0x2));
+		// State 0x3 is the transition into touch (ToTouch), so it must already be
+		// reported as an active contact. Otherwise a click in that frame may be
+		// classified by Windows as a one-finger left click.
+		ptpOutputReport.Contacts[i].TipSwitch = (f->State == 0x3) || ((f->State & 0x4) && (driverContext->IgnoreNearFingers == FALSE ? TRUE : !(f->State & 0x2)));
 
 		// The Microsoft spec says reject any input larger than 25mm. This is not ideal
 		// for Magic Trackpad 2 - so we raised the threshold a bit higher.
