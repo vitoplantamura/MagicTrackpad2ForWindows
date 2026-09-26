@@ -5,7 +5,7 @@ jobs:
     name: Build Driver Package and Control Panel
     permissions:
       contents: write
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
 
       - name: Checkout Code
