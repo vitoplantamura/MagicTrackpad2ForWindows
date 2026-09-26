@@ -196,7 +196,7 @@ PtpFilterInputParseMT2Report(
 		// 0x4 = Contact/Valid
 		// I've gotten 0x6 if I press on the trackpad and then keep my finger close
 		// Note: These values come from my MBP9,2. These also are valid on my MT2
-		ptpOutputReport.Contacts[i].TipSwitch = (f->State & 0x4) && (driverContext->IgnoreNearFingers == FALSE ? TRUE : !(f->State & 0x2));
+		ptpOutputReport.Contacts[i].TipSwitch = driverContext->IgnoreNearFingers == FALSE ? (f->State & 0x4) != 0 : (f->State >= 3 && f->State <= 6);
 
 		// The Microsoft spec says reject any input larger than 25mm. This is not ideal
 		// for Magic Trackpad 2 - so we raised the threshold a bit higher.
