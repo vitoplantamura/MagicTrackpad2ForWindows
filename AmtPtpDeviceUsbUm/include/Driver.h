@@ -15,6 +15,7 @@
 #include <AppleDefinition.h>
 #include <Hid.h>
 #include <Device.h>
+#include <ControlPanel.h>
 #include <Queue.h>
 
 EXTERN_C_START

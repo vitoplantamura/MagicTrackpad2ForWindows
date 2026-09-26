@@ -42,6 +42,13 @@ typedef struct _DEVICE_CONTEXT
 	BOOL                        IgnoreNearFingers;
 	BOOL                        PalmRejection;
 
+	//
+	// Battery-level named-pipe server
+	//
+	HANDLE                      ControlPanelPipeThread;
+	HANDLE                      ControlPanelPipeHandle;
+	volatile LONG               ControlPanelPipeRunning;
+
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
 //

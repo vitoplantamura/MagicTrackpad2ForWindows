@@ -2,20 +2,21 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
+using System.IO;
+using System.IO.Pipes;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
-using System.IO;
-using System.Threading;
-using System.Security.Principal;
-using System.Security.AccessControl;
-using System.Reflection;
 using Microsoft.Win32;
-using System.Diagnostics;
+using Microsoft.Win32.SafeHandles;
 
 namespace AmtPtpControlPanel
 {
@@ -42,7 +43,7 @@ namespace AmtPtpControlPanel
             using (new ButtonWait((Button)sender))
                 if (SaveSettings())
                 {
-                    UsbDevice.RestartDevices();
+                    UsbDevice.ReloadSettings();
                     BtDevice.SendIoctl(BtDevice.IOCTL_RELOAD_SETTINGS);
                 }
         }
@@ -84,13 +85,24 @@ namespace AmtPtpControlPanel
 
         private void ctlBatteryUpdate_Click(object sender, EventArgs e)
         {
-            uint level;
-            if (BtDevice.SendIoctl(BtDevice.IOCTL_GET_BATTERY, out level, true) && level <= 100)
+            uint level = 101;
+
+            Action<string> show = (string source) =>
             {
-                ctlBatteryProgressBar.DisplayType = ProgressBarWithPercentage.TextDisplayType.Percent;
-                ctlBatteryProgressBar.Value = (int)level;
-                ctlBatteryGroupBox.Text = "Battery (only Bluetooth): --- LAST UPDATED: " + DateTime.Now.ToString();
-            }
+                if (level <= 100)
+                {
+                    ctlBatteryProgressBar.DisplayType = ProgressBarWithPercentage.TextDisplayType.Percent;
+                    ctlBatteryProgressBar.Value = (int)level;
+                    ctlBatteryGroupBox.Text = "Battery (" + source + "): --- LAST UPDATED: " + DateTime.Now.ToString();
+                }
+            };
+
+            if (BtDevice.SendIoctl(BtDevice.IOCTL_GET_BATTERY, out level))
+                show("Bluetooth");
+            else if (UsbDevice.GetBattery(out level))
+                show("USB");
+            else
+                MessageBox.Show("No Magic Trackpad 2 connected via USB or Bluetooth found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         private delegate void delStringRefInt32Void(string _1, ref Int32 _2);
@@ -451,128 +463,90 @@ namespace AmtPtpControlPanel
 
     public class UsbDevice
     {
-        public static bool RestartDevices(Action action = null)
+        public static bool ReloadSettings()
         {
-            Guid guid = new Guid("4a5064e5-7d39-41d1-a0e4-81097edce967"); // <-- driver device interface
-
-            bool success = false;
-            IntPtr deviceInfoSet = EnableDevices(false, guid, INVALID_HANDLE_VALUE, ref success);
-
-            if (action != null)
-                action();
-
-            if (success)
-                EnableDevices(true, guid, deviceInfoSet, ref success);
-
-            if (deviceInfoSet != INVALID_HANDLE_VALUE)
-                SetupDiDestroyDeviceInfoList(deviceInfoSet);
-
-            return success;
+            object r = Send(CmdReloadSettings);
+            return r == null;
         }
 
-        public static IntPtr EnableDevices(bool enable, Guid guid, IntPtr deviceInfoSetOverride, ref bool success)
+        public static bool GetBattery(out uint result)
         {
-            IntPtr deviceInfoSet = deviceInfoSetOverride != INVALID_HANDLE_VALUE ? deviceInfoSetOverride :
-                SetupDiGetClassDevs(ref guid, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
-            if (deviceInfoSet == INVALID_HANDLE_VALUE)
-                return INVALID_HANDLE_VALUE;
-
-            uint index = 0;
-
-            while (true)
+            object r = Send(CmdGetBattery);
+            if (r is uint)
             {
-                SP_DEVINFO_DATA devInfo = new SP_DEVINFO_DATA();
-                devInfo.cbSize = (UInt32)Marshal.SizeOf(devInfo);
-                if (!SetupDiEnumDeviceInfo(deviceInfoSet, index, ref devInfo))
-                    break;
-                else
-                    index++;
+                result = (uint)r;
+                return true;
+            }
+            else
+            {
+                result = 0;
+                return false;
+            }
+        }
 
-                SP_PROPCHANGE_PARAMS propChange = new SP_PROPCHANGE_PARAMS();
-                propChange.ClassInstallHeader = new SP_CLASSINSTALL_HEADER();
-                propChange.ClassInstallHeader.cbSize = (UInt32)Marshal.SizeOf(propChange.ClassInstallHeader);
-                propChange.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
-                propChange.Scope = DICS_FLAG_GLOBAL;
-                propChange.StateChange = enable ? DICS_ENABLE : DICS_DISABLE;
+        // named pipe client
 
-                if (SetupDiSetClassInstallParams(deviceInfoSet, ref devInfo, ref propChange, Marshal.SizeOf(propChange)))
+        private const string PipeName = "AmtPtpControlPanelUsbUmInterface";
+
+        private const byte CmdReloadSettings = 0x00;
+        private const byte CmdGetBattery = 0x01;
+
+        private const byte StatusOk = 0x00;
+        private const byte StatusFail = 0xFF;
+        private const byte StatusUnknown = 0xFE;
+
+        private static object Send(byte cmd)
+        {
+            try
+            {
+                using (var pipe = new NamedPipeClientStream(
+                    ".", PipeName, PipeDirection.InOut))
                 {
-                    if (SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, deviceInfoSet, ref devInfo))
+                    pipe.Connect(250);
+
+                    // Send command byte.
+                    pipe.WriteByte(cmd);
+                    pipe.Flush();
+
+                    // Read 2-byte response [status][payload].
+                    var response = new byte[2];
+                    int read = 0;
+                    while (read < response.Length)
                     {
-                        success = true;
+                        int n = pipe.Read(response, read, response.Length - read);
+                        if (n <= 0)
+                            throw new IOException("Pipe closed before full response.");
+                        read += n;
+                    }
+
+                    if (read != 2)
+                        throw new IOException("Invalid size of response.");
+
+                    byte status = response[0];
+                    byte payload = response[1];
+
+                    switch (status)
+                    {
+                        case StatusOk:
+                            return cmd == CmdGetBattery ? (object)(uint)payload : null;
+                        case StatusFail:
+                            return "Driver reported failure.";
+                        case StatusUnknown:
+                            return "Driver reported unknown command.";
+                        default:
+                            return $"Unexpected status 0x{status:X2}.";
                     }
                 }
             }
-
-            return deviceInfoSet;
+            catch (TimeoutException)
+            {
+                return "Timed out waiting for driver pipe.";
+            }
+            catch (Exception ex)
+            {
+                return $"Error: {ex.Message}";
+            }
         }
-
-        // P/Invoke:
-
-        static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
-
-        const int DIGCF_DEFAULT = 0x1;
-        const int DIGCF_PRESENT = 0x2;
-        const int DIGCF_ALLCLASSES = 0x4;
-        const int DIGCF_PROFILE = 0x8;
-        const int DIGCF_DEVICEINTERFACE = 0x10;
-
-        [DllImport("setupapi.dll", CharSet = CharSet.Auto)]
-        static extern IntPtr SetupDiGetClassDevs(
-           ref Guid ClassGuid,
-           IntPtr Enumerator,
-           IntPtr hwndParent,
-           int Flags
-        );
-
-        [DllImport("setupapi.dll", SetLastError = true)]
-        public static extern bool SetupDiDestroyDeviceInfoList
-        (
-                IntPtr DeviceInfoSet
-        );
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct SP_DEVINFO_DATA
-        {
-            public UInt32 cbSize;
-            public Guid ClassGuid;
-            public UInt32 DevInst;
-            public IntPtr Reserved;
-        }
-
-        [DllImport("setupapi.dll", SetLastError = true)]
-        static extern bool SetupDiEnumDeviceInfo(IntPtr DeviceInfoSet, uint MemberIndex, ref SP_DEVINFO_DATA DeviceInfoData);
-
-        [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        static extern bool SetupDiSetClassInstallParams(IntPtr DeviceInfoSet, ref SP_DEVINFO_DATA DeviceInfoData, ref SP_PROPCHANGE_PARAMS ClassInstallParams, int ClassInstallParamsSize);
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct SP_CLASSINSTALL_HEADER
-        {
-            public UInt32 cbSize;
-            public UInt32 InstallFunction;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct SP_PROPCHANGE_PARAMS
-        {
-            public SP_CLASSINSTALL_HEADER ClassInstallHeader;
-            public UInt32 StateChange;
-            public UInt32 Scope;
-            public UInt32 HwProfile;
-        }
-
-        const uint DIF_PROPERTYCHANGE = 0x12;
-        const uint DICS_ENABLE = 1;
-        const uint DICS_DISABLE = 2;
-        const uint DICS_FLAG_GLOBAL = 1;
-
-        [DllImport("setupapi.dll", SetLastError = true)]
-        static extern bool SetupDiCallClassInstaller(
-             UInt32 InstallFunction,
-             IntPtr DeviceInfoSet,
-             ref SP_DEVINFO_DATA DeviceInfoData
-        );
     }
 
     class BtDevice

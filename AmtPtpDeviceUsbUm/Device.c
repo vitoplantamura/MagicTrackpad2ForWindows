@@ -753,6 +753,20 @@ AmtPtpEvtDeviceD0Entry(
 		}
 	}
 
+	//
+	// Start the control panel pipe server for the user-mode client.
+	//
+	status = AmtPtpControlPanelPipeStart(pDeviceContext);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(
+			TRACE_LEVEL_WARNING,
+			TRACE_DRIVER,
+			"%!FUNC! AmtPtpControlPanelPipeStart failed with %!STATUS!",
+			status
+		);
+		// Non-fatal: continue bringing the device up.
+	}
+
 	// Get current time counter
 	QueryPerformanceCounter(
 		&pDeviceContext->PerfCounter
@@ -819,6 +833,11 @@ AmtPtpEvtDeviceD0Exit(
 	);
 
 	pDeviceContext = DeviceGetContext(Device);
+
+	//
+	// Stop the control panel pipe server.
+	//
+	AmtPtpControlPanelPipeStop(pDeviceContext);
 
 	// Stop IO Pipe.
 	WdfIoTargetStop(WdfUsbTargetPipeGetIoTarget(

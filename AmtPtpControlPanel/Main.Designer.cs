@@ -353,7 +353,7 @@ namespace AmtPtpControlPanel
             this.ctlBatteryGroupBox.Size = new System.Drawing.Size(790, 75);
             this.ctlBatteryGroupBox.TabIndex = 13;
             this.ctlBatteryGroupBox.TabStop = false;
-            this.ctlBatteryGroupBox.Text = "Battery (only Bluetooth):";
+            this.ctlBatteryGroupBox.Text = "Battery:";
             // 
             // ctlBatteryUpdate
             // 
