@@ -160,12 +160,6 @@ AmtPtpDeviceEvtIoDeviceControl(
 				Request
 			);
 			break;
-		case IOCTL_HID_GET_STRING:
-			status = AmtPtpGetStrings(
-				device, 
-				Request
-			);
-			break;
 		case IOCTL_HID_READ_REPORT:
 			status = AmtPtpDispatchReadReportRequests(
 				device, 
