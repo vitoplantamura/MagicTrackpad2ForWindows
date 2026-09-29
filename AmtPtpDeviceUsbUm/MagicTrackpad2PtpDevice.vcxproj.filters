@@ -43,9 +43,6 @@
     <ClInclude Include="include\Queue.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\resource.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="include\Trace.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -87,11 +84,6 @@
     <ClCompile Include="Hid.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="Resource.rc">
-      <Filter>Resource Files</Filter>
-    </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="AmtPtpDevice.wprp">
