@@ -3,6 +3,13 @@
 #include <Driver.h>
 #include "Hid.tmh"
 
+// DEFAULT_PTP_HQA_BLOB is a comma-separated list of byte literals. Materialize it once
+// so the whole blob can be copied into the feature report. Assigning the macro to the
+// first array element only stores the first byte (comma operator) and leaves the rest
+// of the 256-byte report untouched.
+static const UCHAR PtpHqaCertificationBlob[] = { DEFAULT_PTP_HQA_BLOB };
+C_ASSERT(sizeof(PtpHqaCertificationBlob) == RTL_FIELD_SIZE(PTP_DEVICE_HQA_CERTIFICATION_REPORT, CertificationBlob));
+
 NTSTATUS
 PtpFilterGetHidDescriptor(
 	_In_ WDFDEVICE Device,
@@ -244,7 +251,7 @@ PtpFilterGetHidFeatures(
 		}
 
 		PPTP_DEVICE_HQA_CERTIFICATION_REPORT certReport = (PPTP_DEVICE_HQA_CERTIFICATION_REPORT)hidContent->reportBuffer;
-		*certReport->CertificationBlob = DEFAULT_PTP_HQA_BLOB;
+		RtlCopyMemory(certReport->CertificationBlob, PtpHqaCertificationBlob, sizeof(certReport->CertificationBlob));
 		certReport->ReportID = REPORTID_PTPHQA;
 
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_PTPHQA is fulfilled");
