@@ -231,6 +231,7 @@ PtpFilterGetHidFeatures(
 		capsReport->MaximumContactPoints = PTP_MAX_CONTACT_POINTS;
 		capsReport->ButtonType = PTP_BUTTON_TYPE_CLICK_PAD;
 		capsReport->ReportID = REPORTID_DEVICE_CAPS;
+		WdfRequestSetInformation(Request, reportSize);
 
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_DEVICE_CAPS has maximum contact points of %d", capsReport->MaximumContactPoints);
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_DEVICE_CAPS has touchpad type %d", capsReport->ButtonType);
@@ -253,6 +254,7 @@ PtpFilterGetHidFeatures(
 		PPTP_DEVICE_HQA_CERTIFICATION_REPORT certReport = (PPTP_DEVICE_HQA_CERTIFICATION_REPORT)hidContent->reportBuffer;
 		RtlCopyMemory(certReport->CertificationBlob, PtpHqaCertificationBlob, sizeof(certReport->CertificationBlob));
 		certReport->ReportID = REPORTID_PTPHQA;
+		WdfRequestSetInformation(Request, reportSize);
 
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_PTPHQA is fulfilled");
 		break;
