@@ -319,6 +319,7 @@ PtpFilterSelfManagedIoRestart(
     else {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! HID detour should already complete here");
         status = STATUS_INVALID_STATE_TRANSITION;
+        goto exit;
     }
 
     // Stamp last query performance counter
@@ -753,8 +754,8 @@ PtpFilterRecoveryTimerCallback(
     // We will try to reinitialize the device
     status = PtpFilterSelfManagedIoRestart(device);
     if (NT_SUCCESS(status)) {
-        // If succeeded, proceed to reissue the request.
-        // Otherwise it will retry the process after a few seconds.
-        PtpFilterInputIssueTransportRequest(device);
+        // If succeeded, bring the transport reads back up to one per queued HID read.
+        // Otherwise the restart has re-armed this timer and we retry in a few seconds.
+        PtpFilterInputReplenishTransportRequests(device);
     }
 }

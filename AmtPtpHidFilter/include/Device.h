@@ -52,6 +52,11 @@ typedef struct _DEVICE_CONTEXT
     BOOLEAN     IsHidIoDetourCompleted;
     WDFTIMER    HidTransportRecoveryTimer;
     WDFWORKITEM HidTransportRecoveryWorkItem;
+    // IOCTL_HID_READ_REPORT requests in flight to the HID transport. Incremented
+    // right before WdfRequestSend, decremented when the send fails or the request
+    // completes. Never reset: in-flight reads survive D0 transitions and decrement
+    // on completion.
+    volatile LONG OutstandingTransportReads;
 
     // Device State
     BOOLEAN DeviceConfigured;
