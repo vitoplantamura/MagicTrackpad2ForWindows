@@ -457,19 +457,21 @@ AmtPtpSetWellspringMode(
 	WDFMEMORY						bufHandle = NULL;
 	unsigned char*					buffer;
 
-	if (IsWellspringModeOn)
+	TraceEvents(
+		TRACE_LEVEL_INFORMATION, 
+		TRACE_DRIVER, 
+		"%!FUNC! Entry"
+	);
+
+	// Push the haptic settings whenever the Magic Trackpad 2 enters multitouch mode.
+	// Other families have no haptics, so skip the registry reads and the transfers.
+	if (IsWellspringModeOn && AmtPtpIsMagicTrackpad2(DeviceContext))
 	{
 		ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
 		ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
 
 		AmtPtpSetHapticFeedback(DeviceContext, feedbackClick, feedbackRelease);
 	}
-
-	TraceEvents(
-		TRACE_LEVEL_INFORMATION, 
-		TRACE_DRIVER, 
-		"%!FUNC! Entry"
-	);
 
 	// Type 3 does not need a mode switch.
 	// However, turn mode on or off as requested.
@@ -635,6 +637,15 @@ AmtPtpSetHapticFeedback( // --> Based on: https://github.com/dos1/Linux-Magic-Tr
 		TRACE_DRIVER,
 		"%!FUNC! Entry"
 	);
+
+	if (!AmtPtpIsMagicTrackpad2(DeviceContext)) {
+		TraceEvents(
+			TRACE_LEVEL_INFORMATION,
+			TRACE_DRIVER,
+			"%!FUNC! Device family has no haptic feedback, skipping"
+		);
+		return STATUS_NOT_SUPPORTED;
+	}
 
 	status = WdfMemoryCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
