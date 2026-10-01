@@ -64,6 +64,14 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)
 #define POOL_TAG_PTP_CONTROL 'PTPC'
 
 //
+// Only the Magic Trackpad 2 family (TYPE5: PIDs 0x0265 and 0x0324) has haptic
+// feedback and a battery. The older MacBook trackpads must not receive those
+// vendor requests. DeviceInfo is always set once EvtDevicePrepareHardware has
+// succeeded, so no NULL check is needed here.
+//
+#define AmtPtpIsMagicTrackpad2(DeviceContext) ((DeviceContext)->DeviceInfo->tp_type == TYPE5)
+
+//
 // Function to initialize the device's queues and callbacks
 //
 NTSTATUS

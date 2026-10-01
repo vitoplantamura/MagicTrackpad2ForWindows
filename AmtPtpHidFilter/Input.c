@@ -20,11 +20,9 @@ PtpFilterInputProcessRequest(
 		return;
 	}
 
-	// Only issue request when fully configured.
-	// Otherwise we will let power recovery process to triage it
-	if (deviceContext->DeviceConfigured == TRUE) {
-		PtpFilterInputIssueTransportRequest(Device);
-	}
+	// Match the transport reads to what is now queued. While the device is not
+	// configured this is a no-op and the recovery path replenishes later.
+	PtpFilterInputReplenishTransportRequests(Device);
 }
 
 VOID
@@ -33,10 +31,58 @@ PtpFilterWorkItemCallback(
 )
 {
 	WDFDEVICE Device = WdfWorkItemGetParentObject(WorkItem);
-	PtpFilterInputIssueTransportRequest(Device);
+	PtpFilterInputReplenishTransportRequests(Device);
 }
 
+_IRQL_requires_max_(DISPATCH_LEVEL)
 VOID
+PtpFilterInputReplenishTransportRequests(
+	_In_ WDFDEVICE Device
+)
+{
+	PDEVICE_CONTEXT deviceContext;
+	ULONG queuedRequests = 0;
+	LONG outstandingReads;
+	LONG deficit;
+
+	deviceContext = PtpFilterGetContext(Device);
+
+	// Only issue reads when fully configured. The recovery timer calls back here
+	// after it has reconfigured the device.
+	if (deviceContext->DeviceConfigured != TRUE) {
+		return;
+	}
+
+	// Invariant: one transport read in flight per upstream IOCTL_HID_READ_REPORT
+	// waiting in HidReadQueue. Earlier recovery paths reissued exactly one read, so
+	// every lost pairing permanently reduced the read depth HIDCLASS keeps (normally 2).
+	//
+	// No lock here on purpose: a synchronous completion inside WdfRequestSend can
+	// complete the upstream request, which lets HIDCLASS send the next read back into
+	// FilterEvtIoIntDeviceControl on this same thread. The interlocked counter is
+	// enough: over-issue costs one dropped frame (that completion finds no queued
+	// request and does not reissue), under-issue is corrected by the next upstream
+	// request.
+	WdfIoQueueGetState(deviceContext->HidReadQueue, &queuedRequests, NULL);
+	outstandingReads = deviceContext->OutstandingTransportReads;
+	deficit = (LONG) queuedRequests - outstandingReads;
+
+	if (deficit > 1) {
+		TraceEvents(TRACE_LEVEL_WARNING, TRACE_INPUT, "%!FUNC! Transport reads fell behind: queued = %lu, outstanding = %ld, issuing %ld",
+			queuedRequests, outstandingReads, deficit);
+	}
+
+	while (deficit > 0) {
+		// A failed issue has already armed the recovery timer or failed the device.
+		if (!PtpFilterInputIssueTransportRequest(Device)) {
+			break;
+		}
+		deficit--;
+	}
+}
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+BOOLEAN
 PtpFilterInputIssueTransportRequest(
 	_In_ WDFDEVICE Device
 )
@@ -61,7 +107,7 @@ PtpFilterInputIssueTransportRequest(
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestCreate fails, status = %!STATUS!", status);
 		deviceContext->DeviceConfigured = FALSE;
 		WdfTimerStart(deviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(3));
-		return;
+		return FALSE;
 	}
 
 	status = WdfMemoryCreateFromLookaside(deviceContext->HidReadBufferLookaside, &hidReadOutputMemory);
@@ -70,7 +116,7 @@ PtpFilterInputIssueTransportRequest(
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfMemoryCreateFromLookaside fails, status = %!STATUS!", status);
 		WdfObjectDelete(hidReadRequest);
 		WdfDeviceSetFailed(deviceContext->Device, WdfDeviceFailedAttemptRestart);
-		return;
+		return FALSE;
 	}
 
 	// Assign context information
@@ -93,16 +139,22 @@ PtpFilterInputIssueTransportRequest(
 		}
 
 		WdfDeviceSetFailed(deviceContext->Device, WdfDeviceFailedAttemptRestart);
-		return;
+		return FALSE;
 	}
 
 	// Set callback
 	WdfRequestSetCompletionRoutine(hidReadRequest, PtpFilterInputRequestCompletionCallback, requestContext);
 
+	// Count before sending: the completion routine, which decrements, can run before
+	// WdfRequestSend returns.
+	InterlockedIncrement(&deviceContext->OutstandingTransportReads);
 	requestStatus = WdfRequestSend(hidReadRequest, deviceContext->HidIoTarget, NULL);
 	if (!requestStatus) {
+		// Not sent, so the completion routine will not run for this request.
+		InterlockedDecrement(&deviceContext->OutstandingTransportReads);
+
 		// Retry after 3 seconds, in case this is a transportation issue.
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! PtpFilterInputIssueTransportRequest request failed to sent");
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestSend failed, status = %!STATUS!", WdfRequestGetStatus(hidReadRequest));
 		deviceContext->DeviceConfigured = FALSE;
 		WdfTimerStart(deviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(3));
 
@@ -113,7 +165,11 @@ PtpFilterInputIssueTransportRequest(
 		if (hidReadRequest != NULL) {
 			WdfObjectDelete(hidReadRequest);
 		}
+
+		return FALSE;
 	}
+
+	return TRUE;
 }
 
 static
@@ -167,6 +223,10 @@ PtpFilterInputParseMT2Report(
 
 	timestamp = (mt_report->TimestampHigh << 5) | mt_report->TimestampLow;
 
+	// Clear the whole report so the contact slots beyond ContactCount do not
+	// carry stack data.
+	RtlZeroMemory(&ptpOutputReport, sizeof(ptpOutputReport));
+
 	// Report header
 	ptpOutputReport.ReportID = REPORTID_MULTITOUCH;
 	ptpOutputReport.IsButtonClicked = (UCHAR) mt_report->Button;
@@ -178,6 +238,32 @@ PtpFilterInputParseMT2Report(
 	// Report required content
 	// Touch
 	raw_n = (BufferLength - sizeof(TRACKPAD_REPORT_TYPE5)) / sizeof(TRACKPAD_FINGER_TYPE5);
+
+	// Release pointer-lock state for slots that are not in this frame. A locked slot
+	// (Id with the MSB set) is normally released by a later frame that still carries
+	// the slot with TipSwitch clear. If the contact simply disappears (Bluetooth packet
+	// loss, or the pad dropping the slot) the entry would stay locked forever and the
+	// next finger reusing that slot id would be reported at the stale X/Y until lifted.
+	// A frame with no contacts therefore releases both entries.
+	{
+		USHORT presentSlots = 0;
+		size_t k;
+
+		for (k = 0; k < raw_n; k++) {
+			presentSlots |= (USHORT)(1u << mt_report->Fingers[k].Id);
+		}
+
+		for (k = 0; k < 2; k++) {
+			PPTP_REPORT_AUX aux = !k ? &DeviceContext->PrevPtpReportAux1 : &DeviceContext->PrevPtpReportAux2;
+
+			if (aux->Id != (UINT32)-1 && (presentSlots & (USHORT)(1u << (aux->Id & 0xF))) == 0) {
+				TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INPUT, "%!FUNC! Slot %lu absent from frame, releasing pointer-lock entry (Id 0x%08lx)", (ULONG)(aux->Id & 0xF), (ULONG)aux->Id);
+				aux->Id = (UINT32)-1;
+				aux->TipSwitch = 0;
+			}
+		}
+	}
+
 	if (raw_n >= PTP_MAX_CONTACT_POINTS) raw_n = PTP_MAX_CONTACT_POINTS;
 	ptpOutputReport.ContactCount = (UCHAR) raw_n;
 	for (size_t i = 0; i < raw_n; i++) {
@@ -270,6 +356,7 @@ PtpFilterInputParseMT2Report(
 	if (!NT_SUCCESS(status))
 	{
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INPUT, "%!FUNC! WdfRequestRetrieveOutputBuffer failed with %!STATUS!", status);
+		WdfRequestComplete(ptpRequest, status);
 		return;
 	}
 
@@ -277,6 +364,7 @@ PtpFilterInputParseMT2Report(
 	if (!NT_SUCCESS(status))
 	{
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INPUT, "%!FUNC! WdfMemoryCopyFromBuffer failed with %!STATUS!", status);
+		WdfRequestComplete(ptpRequest, status);
 		WdfDeviceSetFailed(DeviceContext->Device, WdfDeviceFailedAttemptRestart);
 		return;
 	}
@@ -346,6 +434,11 @@ PtpFilterInputRequestCompletionCallback(
 	
 	requestContext = (PWORKER_REQUEST_CONTEXT)Context;
 	deviceContext = requestContext->DeviceContext;
+
+	// This read is no longer in flight. Decrement first so a replenish triggered from
+	// this routine (recovery work item) sees the right count.
+	InterlockedDecrement(&deviceContext->OutstandingTransportReads);
+
 	responseLength = (size_t)(LONG)WdfRequestGetInformation(Request);
 	responseBuffer = WdfMemoryGetBuffer(Params->Parameters.Ioctl.Output.Buffer, NULL);
 

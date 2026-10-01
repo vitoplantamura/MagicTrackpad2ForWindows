@@ -48,6 +48,16 @@ AmtPtpReadBatteryLevel(
 	PAGED_CODE();
 
 	*BatteryLevel = 0;
+
+	if (!AmtPtpIsMagicTrackpad2(DeviceContext)) {
+		TraceEvents(
+			TRACE_LEVEL_INFORMATION,
+			TRACE_DEVICE,
+			"%!FUNC! Device family has no battery, skipping"
+		);
+		return STATUS_NOT_SUPPORTED;
+	}
+
 	RtlZeroMemory(buffer, sizeof(buffer));
 
 	//
@@ -189,13 +199,23 @@ AmtPtpControlPanelPipeThread(
 			switch (requestByte) {
 			case CONTROLPANEL_CMD_RELOAD_SETTINGS:
 			{
-				ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
-				ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
-				NTSTATUS st = AmtPtpSetHapticFeedback(devCtx, feedbackClick, feedbackRelease);
+				NTSTATUS st = STATUS_SUCCESS;
 
-				if (NT_SUCCESS(st)) {
-					devCtx->PrevPtpReportAuxAndSettingsInited = FALSE;
+				//
+				// Haptics exist only on the Magic Trackpad 2; other families
+				// have nothing to push and simply report OK.
+				//
+				if (AmtPtpIsMagicTrackpad2(devCtx)) {
+					ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
+					ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
+					st = AmtPtpSetHapticFeedback(devCtx, feedbackClick, feedbackRelease);
 				}
+
+				//
+				// The pointer-lock settings are re-read lazily by the TYPE5 parser
+				// on the next frame. A failed haptic transfer must not block that.
+				//
+				devCtx->PrevPtpReportAuxAndSettingsInited = FALSE;
 
 				response[0] = NT_SUCCESS(st)
 					? CONTROLPANEL_STATUS_OK

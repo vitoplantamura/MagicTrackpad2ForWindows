@@ -254,6 +254,10 @@ AmtPtpServiceTouchInputInterrupt(
 	USHORT x = 0, y = 0;
 
 	Status = STATUS_SUCCESS;
+
+	// Clear the whole report so the contact slots beyond ContactCount, and
+	// ContactCount itself when surface reporting is off, do not carry stack data.
+	RtlZeroMemory(&PtpReport, sizeof(PtpReport));
 	PtpReport.ReportID = REPORTID_MULTITOUCH;
 	PtpReport.IsButtonClicked = 0;
 
@@ -430,6 +434,10 @@ AmtPtpServiceTouchInputInterruptType5(
 	);
 
 	Status = STATUS_SUCCESS;
+
+	// Clear the whole report so the contact slots beyond ContactCount, and
+	// ContactCount itself when surface reporting is off, do not carry stack data.
+	RtlZeroMemory(&PtpReport, sizeof(PtpReport));
 	PtpReport.ReportID = REPORTID_MULTITOUCH;
 	PtpReport.IsButtonClicked = 0;
 
@@ -491,6 +499,32 @@ AmtPtpServiceTouchInputInterruptType5(
 	// Type 5 finger report
 	if (DeviceContext->IsSurfaceReportOn) {
 		raw_n = (NumBytesTransferred - sizeof(struct TRACKPAD_REPORT_TYPE5)) / sizeof(struct TRACKPAD_FINGER_TYPE5);
+
+		// Release pointer-lock state for slots that are not in this frame. A locked slot
+		// (Id with the MSB set) is normally released by a later frame that still carries
+		// the slot with TipSwitch clear. If the contact simply disappears (Bluetooth packet
+		// loss, or the pad dropping the slot) the entry would stay locked forever and the
+		// next finger reusing that slot id would be reported at the stale X/Y until lifted.
+		// A frame with no contacts therefore releases both entries.
+		{
+			USHORT presentSlots = 0;
+			size_t k;
+
+			for (k = 0; k < raw_n; k++) {
+				presentSlots |= (USHORT)(1u << mt_report->Fingers[k].Id);
+			}
+
+			for (k = 0; k < 2; k++) {
+				PPTP_REPORT_AUX aux = !k ? &DeviceContext->PrevPtpReportAux1 : &DeviceContext->PrevPtpReportAux2;
+
+				if (aux->Id != (UINT32)-1 && (presentSlots & (USHORT)(1u << (aux->Id & 0xF))) == 0) {
+					TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INPUT, "%!FUNC! Slot %lu absent from frame, releasing pointer-lock entry (Id 0x%08lx)", (ULONG)(aux->Id & 0xF), (ULONG)aux->Id);
+					aux->Id = (UINT32)-1;
+					aux->TipSwitch = 0;
+				}
+			}
+		}
+
 		if (raw_n >= PTP_MAX_CONTACT_POINTS) raw_n = PTP_MAX_CONTACT_POINTS;
 		PtpReport.ContactCount = (UCHAR)raw_n;
 

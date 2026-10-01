@@ -263,7 +263,7 @@ AmtPtpGetWellspringMode(
 	NTSTATUS						status;
 	WDF_USB_CONTROL_SETUP_PACKET	setupPacket;
 	WDF_MEMORY_DESCRIPTOR			memoryDescriptor;
-	ULONG							cbTransferred;
+	ULONG							cbTransferred = 0;
 	WDFMEMORY						bufHandle = NULL;
 	unsigned char*					buffer;
 
@@ -302,7 +302,7 @@ AmtPtpGetWellspringMode(
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
 		&memoryDescriptor,
 		buffer,
-		sizeof(DeviceContext->DeviceInfo->um_size)
+		(ULONG) DeviceContext->DeviceInfo->um_size
 	);
 
 	WDF_USB_CONTROL_SETUP_PACKET_INIT(
@@ -326,18 +326,28 @@ AmtPtpGetWellspringMode(
 		&cbTransferred
 	);
 
-	// Behavior mismatch: Actual device does not transfer bytes as expected (in length)
-	// So we do not check um_size as a temporary workaround.
 	if (!NT_SUCCESS(status)) {
 		TraceEvents(
 			TRACE_LEVEL_ERROR,
 			TRACE_DEVICE,
-			"%!FUNC! WdfUsbTargetDeviceSendControlTransferSynchronously (Read) failed with %!STATUS!, cbTransferred = %llu, um_size = %d",
+			"%!FUNC! WdfUsbTargetDeviceSendControlTransferSynchronously (Read) failed with %!STATUS!, cbTransferred = %lu, um_size = %d",
 			status,
 			cbTransferred,
 			DeviceContext->DeviceInfo->um_size
 		);
 		goto cleanup;
+	}
+
+	// Linux bcm5974 treats a short transfer as an error. Only warn here: the earlier
+	// "behavior mismatch" note came from describing the buffer as sizeof(um_size) bytes.
+	if (cbTransferred != (ULONG) DeviceContext->DeviceInfo->um_size) {
+		TraceEvents(
+			TRACE_LEVEL_WARNING,
+			TRACE_DEVICE,
+			"%!FUNC! Mode-switch read moved %lu bytes, expected %d",
+			cbTransferred,
+			DeviceContext->DeviceInfo->um_size
+		);
 	}
 
 	// Check mode switch
@@ -351,7 +361,9 @@ cleanup:
 		"%!FUNC! Exit"
 	);
 
-	WdfObjectDelete(bufHandle);
+	if (bufHandle != NULL) {
+		WdfObjectDelete(bufHandle);
+	}
 	return status;
 
 }
@@ -441,23 +453,25 @@ AmtPtpSetWellspringMode(
 	NTSTATUS						status;
 	WDF_USB_CONTROL_SETUP_PACKET	setupPacket;
 	WDF_MEMORY_DESCRIPTOR			memoryDescriptor;
-	ULONG							cbTransferred;
+	ULONG							cbTransferred = 0;
 	WDFMEMORY						bufHandle = NULL;
 	unsigned char*					buffer;
-
-	if (IsWellspringModeOn)
-	{
-		ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
-		ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
-
-		AmtPtpSetHapticFeedback(DeviceContext, feedbackClick, feedbackRelease);
-	}
 
 	TraceEvents(
 		TRACE_LEVEL_INFORMATION, 
 		TRACE_DRIVER, 
 		"%!FUNC! Entry"
 	);
+
+	// Push the haptic settings whenever the Magic Trackpad 2 enters multitouch mode.
+	// Other families have no haptics, so skip the registry reads and the transfers.
+	if (IsWellspringModeOn && AmtPtpIsMagicTrackpad2(DeviceContext))
+	{
+		ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
+		ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
+
+		AmtPtpSetHapticFeedback(DeviceContext, feedbackClick, feedbackRelease);
+	}
 
 	// Type 3 does not need a mode switch.
 	// However, turn mode on or off as requested.
@@ -487,7 +501,7 @@ AmtPtpSetWellspringMode(
 	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
 		&memoryDescriptor, 
 		buffer, 
-		sizeof(DeviceContext->DeviceInfo->um_size)
+		(ULONG) DeviceContext->DeviceInfo->um_size
 	);
 
 	WDF_USB_CONTROL_SETUP_PACKET_INIT(
@@ -511,18 +525,28 @@ AmtPtpSetWellspringMode(
 		&cbTransferred
 	);
 
-	// Behavior mismatch: Actual device does not transfer bytes as expected (in length)
-	// So we do not check um_size as a temporary workaround.
 	if (!NT_SUCCESS(status)) {
 		TraceEvents(
 			TRACE_LEVEL_ERROR, 
 			TRACE_DEVICE, 
-			"%!FUNC! WdfUsbTargetDeviceSendControlTransferSynchronously (Read) failed with %!STATUS!, cbTransferred = %llu, um_size = %d", 
+			"%!FUNC! WdfUsbTargetDeviceSendControlTransferSynchronously (Read) failed with %!STATUS!, cbTransferred = %lu, um_size = %d", 
 			status,
 			cbTransferred,
 			DeviceContext->DeviceInfo->um_size
 		);
 		goto cleanup;
+	}
+
+	// Linux bcm5974 treats a short transfer as an error. Only warn here: the earlier
+	// "behavior mismatch" note came from describing the buffer as sizeof(um_size) bytes.
+	if (cbTransferred != (ULONG) DeviceContext->DeviceInfo->um_size) {
+		TraceEvents(
+			TRACE_LEVEL_WARNING,
+			TRACE_DEVICE,
+			"%!FUNC! Mode-switch read moved %lu bytes, expected %d",
+			cbTransferred,
+			DeviceContext->DeviceInfo->um_size
+		);
 	}
 
 	// Apply the mode switch
@@ -562,6 +586,18 @@ AmtPtpSetWellspringMode(
 		goto cleanup;
 	}
 
+	// Linux bcm5974 treats a short transfer as an error. Only warn here: the earlier
+	// "behavior mismatch" note came from describing the buffer as sizeof(um_size) bytes.
+	if (cbTransferred != (ULONG) DeviceContext->DeviceInfo->um_size) {
+		TraceEvents(
+			TRACE_LEVEL_WARNING,
+			TRACE_DEVICE,
+			"%!FUNC! Mode-switch write moved %lu bytes, expected %d",
+			cbTransferred,
+			DeviceContext->DeviceInfo->um_size
+		);
+	}
+
 	// Set status
 	DeviceContext->IsWellspringModeOn = IsWellspringModeOn;
 
@@ -572,7 +608,9 @@ cleanup:
 		"%!FUNC! Exit"
 	);
 
-	WdfObjectDelete(bufHandle);
+	if (bufHandle != NULL) {
+		WdfObjectDelete(bufHandle);
+	}
 	return status;
 
 }
@@ -590,7 +628,7 @@ AmtPtpSetHapticFeedback( // --> Based on: https://github.com/dos1/Linux-Magic-Tr
 	PBYTE							buffer;
 	WDF_MEMORY_DESCRIPTOR			memoryDescriptor;
 	WDF_USB_CONTROL_SETUP_PACKET	setupPacket;
-	ULONG							cbTransferred;
+	ULONG							cbTransferred = 0;
 	CONST BYTE						mt2Click[] = { 0x22, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13 };
 	CONST BYTE						mt2Release[] = { 0x23, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13 }; // WARNING: sizeof(mt2Release) MUST BE == TO sizeof(mt2Click)!
 
@@ -599,6 +637,15 @@ AmtPtpSetHapticFeedback( // --> Based on: https://github.com/dos1/Linux-Magic-Tr
 		TRACE_DRIVER,
 		"%!FUNC! Entry"
 	);
+
+	if (!AmtPtpIsMagicTrackpad2(DeviceContext)) {
+		TraceEvents(
+			TRACE_LEVEL_INFORMATION,
+			TRACE_DRIVER,
+			"%!FUNC! Device family has no haptic feedback, skipping"
+		);
+		return STATUS_NOT_SUPPORTED;
+	}
 
 	status = WdfMemoryCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
@@ -706,7 +753,9 @@ cleanup:
 		"%!FUNC! Exit"
 	);
 
-	WdfObjectDelete(bufHandle);
+	if (bufHandle != NULL) {
+		WdfObjectDelete(bufHandle);
+	}
 	return status;
 }
 
