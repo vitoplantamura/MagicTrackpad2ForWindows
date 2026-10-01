@@ -223,6 +223,10 @@ PtpFilterInputParseMT2Report(
 
 	timestamp = (mt_report->TimestampHigh << 5) | mt_report->TimestampLow;
 
+	// Clear the whole report so the contact slots beyond ContactCount do not
+	// carry stack data.
+	RtlZeroMemory(&ptpOutputReport, sizeof(ptpOutputReport));
+
 	// Report header
 	ptpOutputReport.ReportID = REPORTID_MULTITOUCH;
 	ptpOutputReport.IsButtonClicked = (UCHAR) mt_report->Button;

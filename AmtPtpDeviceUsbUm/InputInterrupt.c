@@ -254,6 +254,10 @@ AmtPtpServiceTouchInputInterrupt(
 	USHORT x = 0, y = 0;
 
 	Status = STATUS_SUCCESS;
+
+	// Clear the whole report so the contact slots beyond ContactCount, and
+	// ContactCount itself when surface reporting is off, do not carry stack data.
+	RtlZeroMemory(&PtpReport, sizeof(PtpReport));
 	PtpReport.ReportID = REPORTID_MULTITOUCH;
 	PtpReport.IsButtonClicked = 0;
 
@@ -430,6 +434,10 @@ AmtPtpServiceTouchInputInterruptType5(
 	);
 
 	Status = STATUS_SUCCESS;
+
+	// Clear the whole report so the contact slots beyond ContactCount, and
+	// ContactCount itself when surface reporting is off, do not carry stack data.
+	RtlZeroMemory(&PtpReport, sizeof(PtpReport));
 	PtpReport.ReportID = REPORTID_MULTITOUCH;
 	PtpReport.IsButtonClicked = 0;
 
