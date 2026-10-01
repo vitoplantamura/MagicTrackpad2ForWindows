@@ -990,6 +990,6 @@ exit:
 		TRACE_DRIVER, 
 		"%!FUNC! Exit"
 	);
-	return STATUS_SUCCESS;
+	return status;
 
 }
