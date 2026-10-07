@@ -14,6 +14,7 @@
 #define USAGE_PAGE 0x05
 #define USAGE_PAGE_1 0x06
 #define USAGE      0x09
+#define USAGE_2    0x0a
 #define USAGE_MINIMUM 0x19
 #define USAGE_MAXIMUM 0x29
 #define LOGICAL_MINIMUM 0x15
