@@ -69,6 +69,7 @@ PtpFilterCreateDevice(
     deviceContext->WdmDeviceObject = WdfDeviceWdmGetDeviceObject(device);
     if (deviceContext->WdmDeviceObject == NULL) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfDeviceWdmGetDeviceObject failed");
+        status = STATUS_UNSUCCESSFUL;
         goto exit;
     }
 
@@ -82,13 +83,17 @@ PtpFilterCreateDevice(
 	deviceContext->PrevPtpReportAux1.Id = (UINT32)-1;
 	deviceContext->PrevPtpReportAux2.Id = (UINT32)-1;
 
-    // Initialize read buffer
-    status = WdfLookasideListCreate(WDF_NO_OBJECT_ATTRIBUTES, REPORT_BUFFER_SIZE,
+    // Initialize read buffer. Parent the lookaside to the device so it goes away with
+    // the device instance; a driver-parented list leaked once per reconnect.
+    WDF_OBJECT_ATTRIBUTES_INIT(&deviceAttributes);
+    deviceAttributes.ParentObject = device;
+    status = WdfLookasideListCreate(&deviceAttributes, REPORT_BUFFER_SIZE,
         NonPagedPoolNx, WDF_NO_OBJECT_ATTRIBUTES, PTP_LIST_POOL_TAG,
         &deviceContext->HidReadBufferLookaside
     );
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfLookasideListCreate failed: %!STATUS!", status);
+        goto exit;
     }
 
     // Initialize HID recovery timer
@@ -100,6 +105,7 @@ PtpFilterCreateDevice(
     status = WdfTimerCreate(&timerConfig, &deviceAttributes, &deviceContext->HidTransportRecoveryTimer);
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfTimerCreate failed: %!STATUS!", status);
+        goto exit;
     }
 
     // Initialize HID recovery workitem
@@ -108,7 +114,8 @@ PtpFilterCreateDevice(
     deviceAttributes.ParentObject = device;
     status = WdfWorkItemCreate(&workitemConfig, &deviceAttributes, &deviceContext->HidTransportRecoveryWorkItem);
     if (!NT_SUCCESS(status)) {
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "HidTransportRecoveryWorkItem failed: %!STATUS!", status);
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfWorkItemCreate failed: %!STATUS!", status);
+        goto exit;
     }
 
     // Set initial state
@@ -121,14 +128,17 @@ PtpFilterCreateDevice(
     status = PtpFilterIoQueueInitialize(device);
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "PtpFilterIoQueueInitialize failed: %!STATUS!", status);
+        goto exit;
     }
 	
-	// Create the control device
+	// Create the control device. Only the Control Panel talks to it, so a failure here
+	// is not fatal: the trackpad must keep working without the settings interface.
 	driverContext = PtpFilterDriverGetContext(Driver);
 	if (driverContext->CDFirstDevice == NULL && driverContext->ControlDevice == NULL) {
 		status = PtpFilterCreateControlDevice(Driver);
 		if (!NT_SUCCESS(status)) {
-			TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "PtpFilterCreateControlDevice failed %!STATUS!", status);
+			TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, "PtpFilterCreateControlDevice failed %!STATUS!, continuing without the control device", status);
+			status = STATUS_SUCCESS;
 		}
 		else {
 			driverContext->CDFirstDevice = device;
@@ -309,6 +319,7 @@ PtpFilterSelfManagedIoRestart(
     else {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! HID detour should already complete here");
         status = STATUS_INVALID_STATE_TRANSITION;
+        goto exit;
     }
 
     // Stamp last query performance counter
@@ -743,8 +754,8 @@ PtpFilterRecoveryTimerCallback(
     // We will try to reinitialize the device
     status = PtpFilterSelfManagedIoRestart(device);
     if (NT_SUCCESS(status)) {
-        // If succeeded, proceed to reissue the request.
-        // Otherwise it will retry the process after a few seconds.
-        PtpFilterInputIssueTransportRequest(device);
+        // If succeeded, bring the transport reads back up to one per queued HID read.
+        // Otherwise the restart has re-armed this timer and we retry in a few seconds.
+        PtpFilterInputReplenishTransportRequests(device);
     }
 }
