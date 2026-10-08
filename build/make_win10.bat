@@ -10,11 +10,17 @@ set /p "sha1TpDr=Please enter the SHA1 Thumbprint for signing the driver package
 rmdir result /S /Q
 mkdir result
 mkdir result\AMD64
-copy AmtPtpDevice_AMD64.inf result\AMD64\AmtPtpDevice.inf
-copy .\MT2FW11-20260223-MSSigned\AmtPtpControlPanel.exe result
-copy .\drivers\MagicTrackpad2ForWindows.cer result
-copy .\MT2FW11-20260223-MSSigned\AMD64\AmtPtpDeviceUsbUm.dll result\AMD64
-copy .\MT2FW11-20260223-MSSigned\AMD64\AmtPtpHidFilter.sys result\AMD64
+
+copy .\MT2FW10-amd64-20260318-SelfSigned\AMD64\AmtPtpDevice.inf result\AMD64 & REM old inf; change only DriverVer
+if %errorlevel% neq 0 exit /b %errorlevel%
+copy .\MT2FW11-20260930-MSSigned\AmtPtpControlPanel.exe result
+if %errorlevel% neq 0 exit /b %errorlevel%
+copy .\MT2FW10-amd64-20260318-SelfSigned\MagicTrackpad2ForWindows.cer result
+if %errorlevel% neq 0 exit /b %errorlevel%
+copy .\MT2FW11-20260930-MSSigned\AMD64\AmtPtpDeviceUsbUm.dll result\AMD64
+if %errorlevel% neq 0 exit /b %errorlevel%
+copy .\MT2FW11-20260930-MSSigned\AMD64\AmtPtpHidFilter.sys result\AMD64
+if %errorlevel% neq 0 exit /b %errorlevel%
 
 "%inf2catPath%" /driver:result\AMD64 /os:10_X64
 if %errorlevel% neq 0 exit /b %errorlevel%
