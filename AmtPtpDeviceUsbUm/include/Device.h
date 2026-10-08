@@ -47,6 +47,7 @@ typedef struct _DEVICE_CONTEXT
 	//
 	HANDLE                      ControlPanelPipeThread;
 	HANDLE                      ControlPanelPipeHandle;
+	HANDLE                      ControlPanelStopEvent;
 	volatile LONG               ControlPanelPipeRunning;
 
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;

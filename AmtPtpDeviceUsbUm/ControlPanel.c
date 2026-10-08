@@ -22,13 +22,6 @@
 #define CONTROLPANEL_STATUS_FAIL    0xFF
 #define CONTROLPANEL_STATUS_UNKNOWN 0xFE
 
-static
-DWORD
-WINAPI
-AmtPtpControlPanelPipeThread(
-	_In_ LPVOID Context
-);
-
 //
 // Sends the command 0x90 to the device and returns the battery level.
 //
@@ -129,223 +122,345 @@ AmtPtpReadBatteryLevel(
 }
 
 //
-// Worker thread: owns the pipe server for the lifetime of the device.
+// Waits on either the overlapped I/O event or the stop event.
+// Returns TRUE if the I/O completed (caller must call GetOverlappedResult),
+// FALSE if stop was requested (caller must CancelIoEx + GetOverlappedResult).
 //
+static
+BOOL
+AmtPtpWaitForOverlappedIoOrStop(
+    _In_  HANDLE    hPipe,
+    _In_  PDEVICE_CONTEXT devCtx,
+    _In_  LPOVERLAPPED pov
+)
+{
+    HANDLE waitHandles[2];
+    DWORD  waitResult;
+
+    waitHandles[0] = pov->hEvent;
+    waitHandles[1] = devCtx->ControlPanelStopEvent;
+
+    waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+
+    if (waitResult == WAIT_OBJECT_0 + 1) {
+        //
+        // Stop requested. Cancel the pending I/O and reap it so the
+        // OVERLAPPED is no longer in use before we return.
+        //
+        CancelIoEx(hPipe, pov);
+        {
+            DWORD dummy = 0;
+            GetOverlappedResult(hPipe, pov, &dummy, TRUE);
+        }
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 static
 DWORD
 WINAPI
 AmtPtpControlPanelPipeThread(
-	_In_ LPVOID Context
+    _In_ LPVOID Context
 )
 {
-	PDEVICE_CONTEXT devCtx = (PDEVICE_CONTEXT)Context;
-	HANDLE          hPipe = INVALID_HANDLE_VALUE;
-	BOOL            connected;
-	UCHAR           requestByte = 0;
-	UCHAR           response[2] = { 0 };
-	DWORD           bytesRead = 0;
-	DWORD           bytesWritten = 0;
+    PDEVICE_CONTEXT devCtx = (PDEVICE_CONTEXT)Context;
+    HANDLE          hPipe = INVALID_HANDLE_VALUE;
+    HANDLE          ioEvent = NULL;
+    OVERLAPPED      ov;
+    BOOL            connected;
+    UCHAR           requestByte = 0;
+    UCHAR           response[2] = { 0 };
+    DWORD           bytesRead = 0;
+    DWORD           bytesWritten = 0;
 
-	while (InterlockedCompareExchange(&devCtx->ControlPanelPipeRunning, 1, 1) == 1) {
+    ioEvent = CreateEventW(NULL, TRUE /*manual reset*/, FALSE, NULL);
+    if (ioEvent == NULL) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
+            "%!FUNC! CreateEventW failed %lu", GetLastError());
+        return 0;
+    }
 
-		hPipe = CreateNamedPipeW(
-			CONTROLPANEL_PIPE_NAME,
-			PIPE_ACCESS_DUPLEX,
-			PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-			PIPE_UNLIMITED_INSTANCES,
-			CONTROLPANEL_PIPE_BUFFER,
-			CONTROLPANEL_PIPE_BUFFER,
-			0,
-			NULL    // default SD: grants access to SYSTEM/Admins.
-			        // If a non-admin client must connect, supply an SD that
-			        // grants read/write to the desired SID.
-		);
+    while (InterlockedCompareExchange(&devCtx->ControlPanelPipeRunning, 1, 1) == 1) {
 
-		if (hPipe == INVALID_HANDLE_VALUE) {
-			TraceEvents(
-				TRACE_LEVEL_ERROR,
-				TRACE_DEVICE,
-				"%!FUNC! CreateNamedPipeW failed %lu",
-				GetLastError()
-			);
-			break;
-		}
+        hPipe = CreateNamedPipeW(
+            CONTROLPANEL_PIPE_NAME,
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,   // <-- overlapped
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+            PIPE_UNLIMITED_INSTANCES,
+            CONTROLPANEL_PIPE_BUFFER,
+            CONTROLPANEL_PIPE_BUFFER,
+            0,
+            NULL
+        );
 
-		//
-		// Publish so stop routine can close it and unblock ConnectNamedPipe.
-		//
-		InterlockedExchangePointer(
-			(PVOID volatile*)&devCtx->ControlPanelPipeHandle,
-			hPipe
-		);
+        if (hPipe == INVALID_HANDLE_VALUE) {
+            TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
+                "%!FUNC! CreateNamedPipeW failed %lu", GetLastError());
+            break;
+        }
 
-		connected = ConnectNamedPipe(hPipe, NULL)
-			? TRUE
-			: (GetLastError() == ERROR_PIPE_CONNECTED);
+        //
+        // Publish the handle so the stop routine can CancelIoEx it.
+        // The worker remains the sole owner and will close it in cleanup.
+        //
+        InterlockedExchangePointer(
+            (PVOID volatile*)&devCtx->ControlPanelPipeHandle,
+            hPipe
+        );
 
-		if (InterlockedCompareExchange(&devCtx->ControlPanelPipeRunning, 0, 0) == 0) {
-			goto cleanup_pipe;
-		}
+        //
+        // Overlapped ConnectNamedPipe.
+        //
+        RtlZeroMemory(&ov, sizeof(ov));
+        ov.hEvent = ioEvent;
+        ResetEvent(ioEvent);
 
-		if (!connected) {
-			goto cleanup_pipe;
-		}
+        connected = ConnectNamedPipe(hPipe, &ov);
+        if (!connected) {
+            DWORD err = GetLastError();
 
-		//
-		// A client is connected. Read one request byte.
-		//
-		if (ReadFile(hPipe, &requestByte, 1, &bytesRead, NULL) && bytesRead == 1) {
+            if (err == ERROR_IO_PENDING) {
+                if (!AmtPtpWaitForOverlappedIoOrStop(hPipe, devCtx, &ov)) {
+                    goto cleanup_pipe;
+                }
+                {
+                    DWORD dummy = 0;
+                    if (!GetOverlappedResult(hPipe, &ov, &dummy, FALSE)) {
+                        goto cleanup_pipe;
+                    }
+                }
+                connected = TRUE;
+            }
+            else if (err == ERROR_PIPE_CONNECTED) {
+                connected = TRUE;
+            }
+            else if (err == ERROR_NO_DATA) {
+                //
+                // Client connected and disconnected before ConnectNamedPipe.
+                // Treat as a completed connection so we can recycle.
+                //
+                connected = TRUE;
+            }
+            else {
+                TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
+                    "%!FUNC! ConnectNamedPipe failed %lu", err);
+                goto cleanup_pipe;
+            }
+        }
 
-			switch (requestByte) {
-			case CONTROLPANEL_CMD_RELOAD_SETTINGS:
-			{
-				NTSTATUS st = STATUS_SUCCESS;
+        if (InterlockedCompareExchange(&devCtx->ControlPanelPipeRunning, 0, 0) == 0) {
+            goto cleanup_pipe;
+        }
 
-				//
-				// Haptics exist only on the Magic Trackpad 2; other families
-				// have nothing to push and simply report OK.
-				//
-				if (AmtPtpIsMagicTrackpad2(devCtx)) {
-					ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
-					ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
-					st = AmtPtpSetHapticFeedback(devCtx, feedbackClick, feedbackRelease);
-				}
+        //
+        // Overlapped read of one request byte.
+        //
+        RtlZeroMemory(&ov, sizeof(ov));
+        ov.hEvent = ioEvent;
+        ResetEvent(ioEvent);
 
-				//
-				// The pointer-lock settings are re-read lazily by the TYPE5 parser
-				// on the next frame. A failed haptic transfer must not block that.
-				//
-				devCtx->PrevPtpReportAuxAndSettingsInited = FALSE;
+        if (!ReadFile(hPipe, &requestByte, 1, &bytesRead, &ov)) {
+            DWORD err = GetLastError();
 
-				response[0] = NT_SUCCESS(st)
-					? CONTROLPANEL_STATUS_OK
-					: CONTROLPANEL_STATUS_FAIL;
-				response[1] = 0;
-				break;
-			}
-			case CONTROLPANEL_CMD_GET_BATTERY_LEVEL:
-			{
-				UCHAR    level = 0;
-				NTSTATUS st = AmtPtpReadBatteryLevel(devCtx, &level);
+            if (err == ERROR_IO_PENDING) {
+                if (!AmtPtpWaitForOverlappedIoOrStop(hPipe, devCtx, &ov)) {
+                    goto cleanup_pipe;
+                }
+                if (!GetOverlappedResult(hPipe, &ov, &bytesRead, FALSE)) {
+                    goto cleanup_pipe;
+                }
+            }
+            else {
+                goto cleanup_pipe;
+            }
+        }
 
-				response[0] = NT_SUCCESS(st)
-					? CONTROLPANEL_STATUS_OK
-					: CONTROLPANEL_STATUS_FAIL;
-				response[1] = level;
-				break;
-			}
-			default:
-				response[0] = CONTROLPANEL_STATUS_UNKNOWN;
-				response[1] = 0;
-				break;
-			}
+        if (bytesRead != 1) {
+            goto cleanup_pipe;
+        }
 
-			WriteFile(hPipe, response, sizeof(response), &bytesWritten, NULL);
-		}
+        //
+        // Dispatch the command.
+        //
+        switch (requestByte) {
+        case CONTROLPANEL_CMD_RELOAD_SETTINGS:
+        {
+            ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
+            ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
+            NTSTATUS st = AmtPtpSetHapticFeedback(devCtx, feedbackClick, feedbackRelease);
 
-		FlushFileBuffers(hPipe);
-		DisconnectNamedPipe(hPipe);
+            if (NT_SUCCESS(st)) {
+                devCtx->PrevPtpReportAuxAndSettingsInited = FALSE;
+            }
+
+            response[0] = NT_SUCCESS(st)
+                ? CONTROLPANEL_STATUS_OK
+                : CONTROLPANEL_STATUS_FAIL;
+            response[1] = 0;
+            break;
+        }
+        case CONTROLPANEL_CMD_GET_BATTERY_LEVEL:
+        {
+            UCHAR    level = 0;
+            NTSTATUS st = AmtPtpReadBatteryLevel(devCtx, &level);
+
+            response[0] = NT_SUCCESS(st)
+                ? CONTROLPANEL_STATUS_OK
+                : CONTROLPANEL_STATUS_FAIL;
+            response[1] = level;
+            break;
+        }
+        default:
+            response[0] = CONTROLPANEL_STATUS_UNKNOWN;
+            response[1] = 0;
+            break;
+        }
+
+        //
+        // Overlapped write of the two response bytes.
+        //
+        RtlZeroMemory(&ov, sizeof(ov));
+        ov.hEvent = ioEvent;
+        ResetEvent(ioEvent);
+
+        if (!WriteFile(hPipe, response, sizeof(response), &bytesWritten, &ov)) {
+            DWORD err = GetLastError();
+
+            if (err == ERROR_IO_PENDING) {
+                if (!AmtPtpWaitForOverlappedIoOrStop(hPipe, devCtx, &ov)) {
+                    goto cleanup_pipe;
+                }
+                GetOverlappedResult(hPipe, &ov, &bytesWritten, FALSE);
+            }
+            // else: best-effort; fall through to disconnect
+        }
+
+        FlushFileBuffers(hPipe);
+        DisconnectNamedPipe(hPipe);
 
 cleanup_pipe:
-		//
-		// Only close the handle if we still own it. The stop routine may
-		// have already closed it via the InterlockedExchangePointer swap.
-		//
-		if (InterlockedCompareExchangePointer(
-				(PVOID volatile*)&devCtx->ControlPanelPipeHandle,
-				NULL,
-				hPipe) == hPipe) {
-			CloseHandle(hPipe);
-		}
-		hPipe = INVALID_HANDLE_VALUE;
-	}
+        //
+        // Worker is the sole owner of hPipe. Clear the published pointer
+        // and close it here so the stop routine never races with us.
+        //
+        InterlockedExchangePointer(
+            (PVOID volatile*)&devCtx->ControlPanelPipeHandle,
+            NULL
+        );
 
-	return 0;
+        if (hPipe != INVALID_HANDLE_VALUE) {
+            CloseHandle(hPipe);
+        }
+        hPipe = INVALID_HANDLE_VALUE;
+    }
+
+    CloseHandle(ioEvent);
+    return 0;
 }
 
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
 AmtPtpControlPanelPipeStart(
-	_In_ PDEVICE_CONTEXT DeviceContext
+    _In_ PDEVICE_CONTEXT DeviceContext
 )
 {
-	PAGED_CODE();
+    PAGED_CODE();
 
-	if (DeviceContext->ControlPanelPipeThread != NULL) {
-		return STATUS_SUCCESS;
-	}
+    if (DeviceContext->ControlPanelPipeThread != NULL) {
+        return STATUS_SUCCESS;
+    }
 
-	DeviceContext->ControlPanelPipeHandle = NULL;
-	InterlockedExchange(&DeviceContext->ControlPanelPipeRunning, 1);
+    DeviceContext->ControlPanelPipeHandle = NULL;
 
-	DeviceContext->ControlPanelPipeThread = CreateThread(
-		NULL,
-		0,
-		AmtPtpControlPanelPipeThread,
-		DeviceContext,
-		0,
-		NULL
-	);
+    //
+    // Manual-reset event: once stop is requested, every waiter wakes.
+    //
+    DeviceContext->ControlPanelStopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (DeviceContext->ControlPanelStopEvent == NULL) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
+            "%!FUNC! CreateEventW failed %lu", GetLastError());
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
-	if (DeviceContext->ControlPanelPipeThread == NULL) {
-		InterlockedExchange(&DeviceContext->ControlPanelPipeRunning, 0);
+    InterlockedExchange(&DeviceContext->ControlPanelPipeRunning, 1);
 
-		TraceEvents(
-			TRACE_LEVEL_ERROR,
-			TRACE_DEVICE,
-			"%!FUNC! CreateThread failed %lu",
-			GetLastError()
-		);
-		return STATUS_INSUFFICIENT_RESOURCES;
-	}
+    DeviceContext->ControlPanelPipeThread = CreateThread(
+        NULL,
+        0,
+        AmtPtpControlPanelPipeThread,
+        DeviceContext,
+        0,
+        NULL
+    );
 
-	TraceEvents(
-		TRACE_LEVEL_INFORMATION,
-		TRACE_DEVICE,
-		"%!FUNC! control panel pipe server started"
-	);
+    if (DeviceContext->ControlPanelPipeThread == NULL) {
+        InterlockedExchange(&DeviceContext->ControlPanelPipeRunning, 0);
+        CloseHandle(DeviceContext->ControlPanelStopEvent);
+        DeviceContext->ControlPanelStopEvent = NULL;
 
-	return STATUS_SUCCESS;
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
+            "%!FUNC! CreateThread failed %lu", GetLastError());
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE,
+        "%!FUNC! control panel pipe server started");
+
+    return STATUS_SUCCESS;
 }
 
 _IRQL_requires_(PASSIVE_LEVEL)
 VOID
 AmtPtpControlPanelPipeStop(
-	_In_ PDEVICE_CONTEXT DeviceContext
+    _In_ PDEVICE_CONTEXT DeviceContext
 )
 {
-	HANDLE hPipe;
+    HANDLE hThread;
+    HANDLE hPipe;
 
-	PAGED_CODE();
+    PAGED_CODE();
 
-	if (DeviceContext->ControlPanelPipeThread == NULL) {
-		return;
-	}
+    if (DeviceContext->ControlPanelPipeThread == NULL) {
+        return;
+    }
 
-	InterlockedExchange(&DeviceContext->ControlPanelPipeRunning, 0);
+    //
+    // 1. Tell the worker we are stopping.
+    //
+    InterlockedExchange(&DeviceContext->ControlPanelPipeRunning, 0);
 
-	//
-	// Closing the pipe handle forces a blocking ConnectNamedPipe (or
-	// ReadFile) on the worker thread to return with an error, so the
-	// thread can observe ControlPanelPipeRunning == 0 and exit.
-	//
-	hPipe = (HANDLE)InterlockedExchangePointer(
-		(PVOID volatile*)&DeviceContext->ControlPanelPipeHandle,
-		NULL
-	);
+    //
+    // 2. Wake the worker out of any overlapped wait.
+    //
+    if (DeviceContext->ControlPanelStopEvent != NULL) {
+        SetEvent(DeviceContext->ControlPanelStopEvent);
+    }
 
-	if (hPipe != NULL && hPipe != INVALID_HANDLE_VALUE) {
-		CloseHandle(hPipe);
-	}
+    //
+    // 3. Cancel any in-flight overlapped I/O on the published handle.
+    //    The worker still owns the handle and will close it in cleanup.
+    //
+    hPipe = (HANDLE)DeviceContext->ControlPanelPipeHandle;
+    if (hPipe != NULL && hPipe != INVALID_HANDLE_VALUE) {
+        CancelIoEx(hPipe, NULL);
+    }
 
-	WaitForSingleObject(DeviceContext->ControlPanelPipeThread, 5000);
+    //
+    // 4. Now it is safe to wait indefinitely: the stop event guarantees
+    //    the worker will not stay blocked in ConnectNamedPipe/ReadFile.
+    //
+    hThread = DeviceContext->ControlPanelPipeThread;
+    WaitForSingleObject(hThread, INFINITE);
+    CloseHandle(hThread);
+    DeviceContext->ControlPanelPipeThread = NULL;
 
-	CloseHandle(DeviceContext->ControlPanelPipeThread);
-	DeviceContext->ControlPanelPipeThread = NULL;
+    if (DeviceContext->ControlPanelStopEvent != NULL) {
+        CloseHandle(DeviceContext->ControlPanelStopEvent);
+        DeviceContext->ControlPanelStopEvent = NULL;
+    }
 
-	TraceEvents(
-		TRACE_LEVEL_INFORMATION,
-		TRACE_DEVICE,
-		"%!FUNC! control panel pipe server stopped"
-	);
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE,
+        "%!FUNC! control panel pipe server stopped");
 }

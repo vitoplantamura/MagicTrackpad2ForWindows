@@ -842,6 +842,12 @@ End:
 
 	if (!NT_SUCCESS(status)) {
 		//
+		// Stop the pipe server before tearing down so the worker thread
+		// does not outlive the device context.
+		//
+		AmtPtpControlPanelPipeStop(pDeviceContext);
+
+		//
 		// Failure in D0Entry will lead to device being removed. So let us stop the continuous
 		// reader in preparation for the ensuing remove.
 		//
