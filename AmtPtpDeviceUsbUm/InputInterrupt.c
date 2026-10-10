@@ -409,6 +409,49 @@ exit:
 
 }
 
+// Axis-aligned bounding box (PTP Width/Height, in X/Y logical units) of the Apple touch
+// ellipse. TouchMajor/TouchMinor are the ellipse axes; << 2 maps them to X/Y units as Linux
+// hid-magicmouse does. Orientation is 3-bit: 4 = major axis along Y, one step = 22.5 deg
+// (measured on an MT2). The box is symmetric in the rotation sign, so only |k| matters.
+static ULONG
+AmtPtpIsqrt(
+	_In_ ULONG v
+)
+{
+	ULONG r = 0, bit = 1UL << 30;
+	while (bit > v) bit >>= 2;
+	while (bit) {
+		if (v >= r + bit) { v -= r + bit; r = (r >> 1) + bit; }
+		else r >>= 1;
+		bit >>= 2;
+	}
+	return r;
+}
+
+static VOID
+AmtPtpMt2ContactBox(
+	_In_ UCHAR TouchMajor,
+	_In_ UCHAR TouchMinor,
+	_In_ UCHAR Orientation,
+	_Out_ USHORT* Width,
+	_Out_ USHORT* Height
+)
+{
+	// cos and sin of k * 22.5 degrees, scaled by 1024, for k = 0..4
+	static const USHORT cosK[5] = { 1024, 946, 724, 392, 0 };
+	static const USHORT sinK[5] = { 0, 392, 724, 946, 1024 };
+	INT k = (INT)(Orientation & 7) - 4;
+	ULONG a = (ULONG)(TouchMajor ? TouchMajor : 1) << 2;
+	ULONG b = (ULONG)(TouchMinor ? TouchMinor : 1) << 2;
+	ULONG ac, as, bc, bs, w, h;
+	if (k < 0) k = -k;
+	ac = (a * cosK[k] + 512) >> 10; as = (a * sinK[k] + 512) >> 10;
+	bc = (b * cosK[k] + 512) >> 10; bs = (b * sinK[k] + 512) >> 10;
+	w = AmtPtpIsqrt(as * as + bc * bc);  // X extent: major axis tilted away from Y
+	h = AmtPtpIsqrt(ac * ac + bs * bs);  // Y extent
+	*Width = (USHORT)(w ? w : 1);        // never zero while touching (spec)
+	*Height = (USHORT)(h ? h : 1);
+}
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
 AmtPtpServiceTouchInputInterruptType5(
@@ -421,7 +464,7 @@ AmtPtpServiceTouchInputInterruptType5(
 	NTSTATUS   Status;
 	WDFREQUEST Request;
 	WDFMEMORY  RequestMemory;
-	PTP_REPORT PtpReport;
+	PTP_REPORT_MT2 PtpReport;
 
 	const struct TRACKPAD_FINGER_TYPE5* f;
 	const struct TRACKPAD_REPORT_TYPE5* mt_report;
@@ -620,6 +663,23 @@ AmtPtpServiceTouchInputInterruptType5(
 			PtpReport.Contacts[i].X = prev_contact ? prev_contact->X : (USHORT)x;
 			PtpReport.Contacts[i].Y = prev_contact ? prev_contact->Y : (USHORT)y;
 
+			// Optional PTP usages: contact size in X/Y units (zero only on an "up" report, per
+			// spec), per-contact pressure and the Mechanical Force total; then vendor extras.
+			if (PtpReport.Contacts[i].TipSwitch) {
+				USHORT width, height; // locals: the report is packed, field addresses may be unaligned
+				AmtPtpMt2ContactBox(f->TouchMajor, f->TouchMinor, (UCHAR)f->Orientation, &width, &height);
+				PtpReport.Contacts[i].Width = width;
+				PtpReport.Contacts[i].Height = height;
+			}
+			PtpReport.Contacts[i].Pressure = f->Pressure;
+			PtpReport.MechanicalForce += f->Pressure;
+			PtpReport.Contacts[i].Size = f->Size;
+			PtpReport.Contacts[i].TouchMajor = f->TouchMajor;
+			PtpReport.Contacts[i].TouchMinor = f->TouchMinor;
+			PtpReport.Contacts[i].Orientation = (UCHAR)f->Orientation;
+			PtpReport.Contacts[i].Finger = (UCHAR)f->Finger;
+			PtpReport.Contacts[i].State = (UCHAR)f->State;
+
 #undef UINT32_SET_MSB
 
 //#ifdef INPUT_CONTENT_TRACE
@@ -651,7 +711,7 @@ AmtPtpServiceTouchInputInterruptType5(
 		RequestMemory, 
 		0, 
 		(PVOID) &PtpReport, 
-		sizeof(PTP_REPORT)
+		sizeof(PTP_REPORT_MT2)
 	);
 
 	if (!NT_SUCCESS(Status)) {
@@ -667,7 +727,7 @@ AmtPtpServiceTouchInputInterruptType5(
 	// Set result
 	WdfRequestSetInformation(
 		Request, 
-		sizeof(PTP_REPORT)
+		sizeof(PTP_REPORT_MT2)
 	);
 
 	// Set completion flag

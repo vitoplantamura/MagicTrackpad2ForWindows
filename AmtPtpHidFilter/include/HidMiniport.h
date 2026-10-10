@@ -38,6 +38,18 @@ typedef struct _PTP_CONTACT {
 	ULONG		ContactID;
 	USHORT		X;
 	USHORT		Y;
+	// Optional Precision Touchpad usages (Width 0x48, Height 0x49 in X/Y units; Pressure 0x30,
+	// 16-bit, same range as Mechanical Force) then vendor-defined extras (page 0xFF00: 0x02 Size, 0x03/0x04 raw TouchMajor/Minor, 0x05 Orientation,
+	// 0x06 Finger type, 0x07 State). Layout must match AAPL_MAGIC_TRACKPAD2_PTP_FINGER_EXTRAS.
+	USHORT		Width;
+	USHORT		Height;
+	USHORT		Pressure;
+	UCHAR		Size;
+	UCHAR		TouchMajor;
+	UCHAR		TouchMinor;
+	UCHAR		Orientation;
+	UCHAR		Finger;
+	UCHAR		State;
 } PTP_CONTACT, * PPTP_CONTACT;
 
 // PTP single scan frame Input Report
@@ -46,8 +58,12 @@ typedef struct _PTP_REPORT {
 	PTP_CONTACT Contacts[5];
 	USHORT      ScanTime;
 	UCHAR       ContactCount;
+	USHORT      MechanicalForce; // Sensors page 0x20 / 0x494: sum of all contact pressures
 	UCHAR       IsButtonClicked;
 } PTP_REPORT, * PPTP_REPORT;
+
+C_ASSERT(sizeof(PTP_CONTACT) == 21);
+C_ASSERT(sizeof(PTP_REPORT) == 1 + 5 * 21 + 2 + 1 + 2 + 1);
 
 #include <poppack.h>
 
