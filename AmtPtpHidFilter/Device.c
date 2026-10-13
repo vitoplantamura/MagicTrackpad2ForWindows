@@ -18,6 +18,8 @@ PtpFilterEvtDeviceContextCleanup(
     PAGED_CODE();
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Cleanup");
 
+	PtpFilterHapticTrackpadRemoved((WDFDEVICE)DeviceObject);
+
 	// delete the control device
 	driver = WdfDeviceGetDriver((WDFDEVICE)DeviceObject);
 	driverContext = PtpFilterDriverGetContext(driver);
@@ -52,6 +54,7 @@ PtpFilterCreateDevice(
     pnpPowerCallbacks.EvtDeviceD0Exit = PtpFilterDeviceD0Exit;
     pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = PtpFilterSelfManagedIoInit;
     pnpPowerCallbacks.EvtDeviceSelfManagedIoRestart = PtpFilterSelfManagedIoRestart;
+    pnpPowerCallbacks.EvtDeviceSelfManagedIoCleanup = PtpFilterSelfManagedIoCleanup;
     WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
 
     // Create WDF device object
@@ -62,6 +65,10 @@ PtpFilterCreateDevice(
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfDeviceCreate failed: %!STATUS!", status);
         goto exit;
     }
+
+    // Paired with PtpFilterHapticTrackpadRemoved in the cleanup callback, which runs even if
+    // the rest of this function fails.
+    PtpFilterHapticTrackpadAdded(Driver);
 
     // Initialize context and interface
     deviceContext = PtpFilterGetContext(device);
@@ -273,6 +280,9 @@ PtpFilterSelfManagedIoInit(
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Device %x:%x, Version 0x%x", deviceContext->VendorID,
         deviceContext->ProductID, deviceContext->VersionNumber);
 
+    // The HID transport is usable from here on: IOCTL_PTPFILTER_ACTUATE may send to it.
+    PtpFilterHapticTrackpadStarted(Device);
+
     status = PtpFilterConfigureMultiTouch(Device);
     if (!NT_SUCCESS(status)) {
         // If this failed, we will retry after 2 seconds (and pretend nothing happens)
@@ -291,6 +301,18 @@ PtpFilterSelfManagedIoInit(
 exit:
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit, Status = %!STATUS!", status);
     return status;
+}
+
+VOID
+PtpFilterSelfManagedIoCleanup(
+    _In_ WDFDEVICE Device
+)
+{
+    PAGED_CODE();
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
+
+    // Before the device and its I/O target are deleted.
+    PtpFilterHapticTrackpadStopped(Device);
 }
 
 NTSTATUS
@@ -463,7 +485,8 @@ PtpFilterSendHidReport(
     _In_ ULONG IoControlCode,
     _In_ UCHAR ReportId,
     _In_ PUCHAR pReportData,
-    _In_ ULONG ReportDataSize
+    _In_ ULONG ReportDataSize,
+    _In_ LONGLONG Timeout       // WDF_REL_TIMEOUT_IN_*, or 0 to wait for completion
     )
 {
     NTSTATUS status = STATUS_SUCCESS;
@@ -549,6 +572,9 @@ PtpFilterSendHidReport(
     // Send synchronously
     WDF_REQUEST_SEND_OPTIONS sendOptions;
     WDF_REQUEST_SEND_OPTIONS_INIT(&sendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS);
+    if (Timeout != 0) {
+        WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&sendOptions, Timeout);
+    }
 
     if (!WdfRequestSend(request, deviceContext->HidIoTarget, &sendOptions)) {
         status = WdfRequestGetStatus(request);
@@ -576,7 +602,7 @@ PtpFilterSendHidFeatureReport(
     )
 {
     PAGED_CODE();
-    return PtpFilterSendHidReport(Device, IOCTL_HID_SET_FEATURE, ReportId, pReportData, ReportDataSize);
+    return PtpFilterSendHidReport(Device, IOCTL_HID_SET_FEATURE, ReportId, pReportData, ReportDataSize, 0);
 }
 
 NTSTATUS
@@ -588,7 +614,10 @@ PtpFilterSendHidOutputReport(
     )
 {
     PAGED_CODE();
-    return PtpFilterSendHidReport(Device, IOCTL_HID_WRITE_REPORT, ReportId, pReportData, ReportDataSize);
+    // A click that comes seconds late is useless, and the actuation queue is sequential:
+    // don't let a link that is up but unresponsive hold it. A send takes ~70 ms, up to ~2 s
+    // around a reconnect.
+    return PtpFilterSendHidReport(Device, IOCTL_HID_WRITE_REPORT, ReportId, pReportData, ReportDataSize, WDF_REL_TIMEOUT_IN_SEC(3));
 }
 
 NTSTATUS
@@ -656,9 +685,12 @@ PtpFilterActuate( // --> Based on: https://github.com/Eriskii/LinuxMagicForce (h
     }
 
     // Feedback uses the encoding of the FeedbackClick setting (e.g. 0x060617 = medium click).
+    // Report bytes 6 and 11 are capped where LinuxMagicForce's tuning notes stop: above
+    // 0x20 and 0x40 it calls them experimental hardware-stress settings. Byte 3 is the main
+    // strength field and is usable across its full range.
     mt2Actuate[2] = (BYTE)(Feedback >> 0);
-    mt2Actuate[5] = (BYTE)(Feedback >> 8);
-    mt2Actuate[10] = (BYTE)(Feedback >> 16);
+    mt2Actuate[5] = (BYTE)min((Feedback >> 8) & 0xFF, 0x20UL);
+    mt2Actuate[10] = (BYTE)min((Feedback >> 16) & 0xFF, 0x40UL);
 
     status = PtpFilterSendHidOutputReport(Device, 0xF2, mt2Actuate, sizeof(mt2Actuate));
     if (!NT_SUCCESS(status)) {

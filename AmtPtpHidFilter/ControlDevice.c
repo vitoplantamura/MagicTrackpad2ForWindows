@@ -3,6 +3,9 @@
 #include <Driver.h>
 #include "ControlDevice.tmh"
 
+// Minimum time between two actuations, in 100 ns units (20 ms, as LinuxMagicForce uses).
+#define ACTUATE_MIN_GAP (20 * 10000ULL)
+
 static NTSTATUS
 PtpFilterControlActuate(
     _In_ PDRIVER_CONTEXT DriverContext,
@@ -13,11 +16,8 @@ PtpFilterControlActuate(
 	NTSTATUS status;
 	PULONG pInputBuffer = NULL;
 	ULONG feedback;
-
-	if (DriverContext->CDFirstDevice == NULL) {
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! CDFirstDevice == NULL");
-		return STATUS_INVALID_DEVICE_STATE;
-	}
+	ULONGLONG elapsed;
+	LARGE_INTEGER delay;
 
 	// The input is optional: without it the actuator fires with the current FeedbackClick setting.
 	feedback = DriverContext->FeedbackClick;
@@ -30,7 +30,28 @@ PtpFilterControlActuate(
 		feedback = *pInputBuffer & 0xFFFFFF;
 	}
 
-	return PtpFilterActuate(DriverContext->CDFirstDevice, feedback);
+	// The lock keeps the trackpad from being torn down during the send and serializes
+	// actuations from both control devices.
+	WdfWaitLockAcquire(DriverContext->HapticLock, NULL);
+
+	if (DriverContext->HapticTrackpad == NULL) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! No trackpad started");
+		status = STATUS_DEVICE_NOT_CONNECTED;
+		goto Exit;
+	}
+
+	elapsed = KeQueryInterruptTime() - DriverContext->LastActuateTime;
+	if (elapsed < ACTUATE_MIN_GAP) {
+		delay.QuadPart = -(LONGLONG)(ACTUATE_MIN_GAP - elapsed);
+		KeDelayExecutionThread(KernelMode, FALSE, &delay);
+	}
+	DriverContext->LastActuateTime = KeQueryInterruptTime();
+
+	status = PtpFilterActuate(DriverContext->HapticTrackpad, feedback);
+
+Exit:
+	WdfWaitLockRelease(DriverContext->HapticLock);
+	return status;
 }
 
 VOID
@@ -175,6 +196,7 @@ PtpFilterCreateNamedControlDevice(
     _In_ PCUNICODE_STRING SymLink,
     _In_ PCUNICODE_STRING Sddl,
     _In_ PFN_WDF_IO_QUEUE_IO_DEVICE_CONTROL EvtIoDeviceControl,
+    _In_opt_ PWDF_FILEOBJECT_CONFIG FileObjectConfig,
     _Out_ WDFDEVICE* Device
 )
 {
@@ -201,11 +223,17 @@ PtpFilterCreateNamedControlDevice(
         return status;
     }
 
+    if (FileObjectConfig != NULL) {
+        WdfDeviceInitSetFileObjectConfig(deviceInit, FileObjectConfig, WDF_NO_OBJECT_ATTRIBUTES);
+    }
+
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
     status = WdfDeviceCreate(&deviceInit, &attributes, &controlDevice);
     if (!NT_SUCCESS(status)) {
+        // E.g. STATUS_OBJECT_NAME_COLLISION. On failure the init is still ours to free.
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, 
             "WdfDeviceCreate (control) failed: %!STATUS!", status);
+        WdfDeviceInitFree(deviceInit);
         return status;
     }
 
@@ -236,35 +264,19 @@ PtpFilterCreateControlDevice(
 {
     NTSTATUS status;
     WDFDEVICE controlDevice;
-    WDFDEVICE hapticDevice;
     PDRIVER_CONTEXT driverContext;
     
     DECLARE_CONST_UNICODE_STRING(controlDeviceName, L"\\Device\\AmtPtpControlDeviceUm");
     DECLARE_CONST_UNICODE_STRING(controlDeviceSymLink, L"\\DosDevices\\AmtPtpControlDeviceUm");
-    DECLARE_CONST_UNICODE_STRING(hapticDeviceName, L"\\Device\\AmtPtpHapticDeviceUm");
-    DECLARE_CONST_UNICODE_STRING(hapticDeviceSymLink, L"\\DosDevices\\AmtPtpHapticDeviceUm");
-    // SYSTEM and Administrators: all access. Interactive users: read/write, so that an app
-    // running in the user's session can fire the actuator without elevation.
-    DECLARE_CONST_UNICODE_STRING(hapticDeviceSddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)");
 
     status = PtpFilterCreateNamedControlDevice(Driver, &controlDeviceName, &controlDeviceSymLink,
-        &SDDL_DEVOBJ_SYS_ALL_ADM_ALL, PtpFilterEvtIoDeviceControl, &controlDevice);
+        &SDDL_DEVOBJ_SYS_ALL_ADM_ALL, PtpFilterEvtIoDeviceControl, NULL, &controlDevice);
     if (!NT_SUCCESS(status)) {
         return status;
     }
 
-    // The haptic device is optional: settings and battery keep working without it.
-    status = PtpFilterCreateNamedControlDevice(Driver, &hapticDeviceName, &hapticDeviceSymLink,
-        &hapticDeviceSddl, PtpFilterEvtIoHapticDeviceControl, &hapticDevice);
-    if (!NT_SUCCESS(status)) {
-        TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, 
-            "Haptic device not created: %!STATUS!, continuing without it", status);
-        hapticDevice = NULL;
-    }
-
     driverContext = PtpFilterDriverGetContext(Driver);
     driverContext->ControlDevice = controlDevice;
-    driverContext->HapticDevice = hapticDevice;
 
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, 
         "Control device created successfully");
@@ -284,10 +296,182 @@ PtpFilterDeleteControlDevice(
         WdfObjectDelete(driverContext->ControlDevice);
         driverContext->ControlDevice = NULL;
     }
+}
 
-    if (driverContext->HapticDevice != NULL) {
+//
+// Haptic device lifetime. It exists while a trackpad exists or an app holds it open, so a
+// handle held across a reconnect stays valid and the name is never taken by a deleted device.
+// All of it runs at PASSIVE_LEVEL under HapticLock.
+//
+
+static VOID
+PtpFilterDeleteHapticDeviceIfUnused(
+    _In_ PDRIVER_CONTEXT DriverContext
+)
+{
+    if (DriverContext->HapticDevice != NULL && DriverContext->Trackpads == 0 && DriverContext->HapticHandles == 0) {
         TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Deleting Haptic Device");
-        WdfObjectDelete(driverContext->HapticDevice);
-        driverContext->HapticDevice = NULL;
+        WdfObjectDelete(DriverContext->HapticDevice);
+        DriverContext->HapticDevice = NULL;
     }
+}
+
+static EVT_WDF_DEVICE_FILE_CREATE PtpFilterEvtHapticFileCreate;
+static EVT_WDF_FILE_CLOSE PtpFilterEvtHapticFileClose;
+
+static VOID
+PtpFilterEvtHapticFileCreate(
+    _In_ WDFDEVICE Device,
+    _In_ WDFREQUEST Request,
+    _In_ WDFFILEOBJECT FileObject
+)
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    PDRIVER_CONTEXT driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(Device));
+
+    UNREFERENCED_PARAMETER(FileObject);
+
+    WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+    if (Device == driverContext->HapticDevice) {
+        driverContext->HapticHandles++;
+    } else {
+        // The open raced with the deletion of this device.
+        status = STATUS_DELETE_PENDING;
+    }
+    WdfWaitLockRelease(driverContext->HapticLock);
+
+    WdfRequestComplete(Request, status);
+}
+
+static IO_WORKITEM_ROUTINE PtpFilterHapticDeleteWorkItem;
+
+static VOID
+PtpFilterHapticDeleteWorkItem(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_opt_ PVOID Context
+)
+{
+    PDRIVER_CONTEXT driverContext = PtpFilterDriverGetContext(WdfGetDriver());
+
+    WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+    if (driverContext->HapticDevice != NULL && WdfDeviceWdmGetDeviceObject(driverContext->HapticDevice) == DeviceObject) {
+        PtpFilterDeleteHapticDeviceIfUnused(driverContext);
+    }
+    WdfWaitLockRelease(driverContext->HapticLock);
+
+    if (Context != NULL) {
+        IoFreeWorkItem((PIO_WORKITEM)Context);
+    }
+}
+
+static VOID
+PtpFilterEvtHapticFileClose(
+    _In_ WDFFILEOBJECT FileObject
+)
+{
+    WDFDEVICE device = WdfFileObjectGetDevice(FileObject);
+    PDRIVER_CONTEXT driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(device));
+    PIO_WORKITEM workItem;
+
+    WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+    if (device == driverContext->HapticDevice) {
+        driverContext->HapticHandles--;
+        // The last handle closed after the last trackpad went away. Delete the device from a
+        // work item rather than from its own close callback; the work item references the
+        // device object, so the driver can't unload before it runs.
+        if (driverContext->HapticHandles == 0 && driverContext->Trackpads == 0) {
+            workItem = IoAllocateWorkItem(WdfDeviceWdmGetDeviceObject(device));
+            if (workItem != NULL) {
+                IoQueueWorkItem(workItem, PtpFilterHapticDeleteWorkItem, DelayedWorkQueue, workItem);
+            } else {
+                TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, "IoAllocateWorkItem failed, Haptic Device kept until the next trackpad");
+            }
+        }
+    }
+    WdfWaitLockRelease(driverContext->HapticLock);
+}
+
+VOID
+PtpFilterHapticTrackpadAdded(
+    _In_ WDFDRIVER Driver
+)
+{
+    NTSTATUS status;
+    PDRIVER_CONTEXT driverContext = PtpFilterDriverGetContext(Driver);
+    WDF_FILEOBJECT_CONFIG fileConfig;
+    WDFDEVICE hapticDevice;
+
+    DECLARE_CONST_UNICODE_STRING(hapticDeviceName, L"\\Device\\AmtPtpHapticDeviceUm");
+    DECLARE_CONST_UNICODE_STRING(hapticDeviceSymLink, L"\\DosDevices\\AmtPtpHapticDeviceUm");
+    // SYSTEM and Administrators: all access. Interactive users: read/write, so that an app
+    // running in the user's session can fire the actuator without elevation.
+    DECLARE_CONST_UNICODE_STRING(hapticDeviceSddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)");
+
+    WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+
+    driverContext->Trackpads++;
+
+    // The haptic device is optional: the trackpad, settings and battery work without it.
+    // If it can't be created now, the next trackpad device retries.
+    if (driverContext->HapticDevice == NULL) {
+        WDF_FILEOBJECT_CONFIG_INIT(&fileConfig, PtpFilterEvtHapticFileCreate, PtpFilterEvtHapticFileClose, WDF_NO_EVENT_CALLBACK);
+        status = PtpFilterCreateNamedControlDevice(Driver, &hapticDeviceName, &hapticDeviceSymLink,
+            &hapticDeviceSddl, PtpFilterEvtIoHapticDeviceControl, &fileConfig, &hapticDevice);
+        if (NT_SUCCESS(status)) {
+            driverContext->HapticDevice = hapticDevice;
+            driverContext->HapticHandles = 0;
+            TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Haptic device created successfully");
+        } else {
+            TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, 
+                "Haptic device not created: %!STATUS!, continuing without it", status);
+        }
+    }
+
+    WdfWaitLockRelease(driverContext->HapticLock);
+}
+
+VOID
+PtpFilterHapticTrackpadStarted(
+    _In_ WDFDEVICE Device
+)
+{
+    PDRIVER_CONTEXT driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(Device));
+
+    WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+    if (driverContext->HapticTrackpad == NULL) {
+        driverContext->HapticTrackpad = Device;
+    }
+    WdfWaitLockRelease(driverContext->HapticLock);
+}
+
+VOID
+PtpFilterHapticTrackpadStopped(
+    _In_ WDFDEVICE Device
+)
+{
+    PDRIVER_CONTEXT driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(Device));
+
+    // Waits for an actuation in flight on this trackpad to finish.
+    WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+    if (driverContext->HapticTrackpad == Device) {
+        driverContext->HapticTrackpad = NULL;
+    }
+    WdfWaitLockRelease(driverContext->HapticLock);
+}
+
+VOID
+PtpFilterHapticTrackpadRemoved(
+    _In_ WDFDEVICE Device
+)
+{
+    PDRIVER_CONTEXT driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(Device));
+
+    WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+    if (driverContext->HapticTrackpad == Device) {
+        driverContext->HapticTrackpad = NULL;
+    }
+    driverContext->Trackpads--;
+    // With a handle still open the device stays, and the last close deletes it.
+    PtpFilterDeleteHapticDeviceIfUnused(driverContext);
+    WdfWaitLockRelease(driverContext->HapticLock);
 }
