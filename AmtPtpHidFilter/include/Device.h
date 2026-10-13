@@ -116,6 +116,28 @@ PtpFilterSetHapticFeedback(
 );
 
 NTSTATUS
+PtpFilterActuate(
+    _In_ WDFDEVICE Device,
+    _In_ ULONG Feedback
+);
+
+NTSTATUS
+PtpFilterSendHidFeatureReport(
+    _In_ WDFDEVICE Device,
+    _In_ UCHAR ReportId,
+    _In_ PUCHAR pReportData,
+    _In_ ULONG ReportDataSize
+);
+
+NTSTATUS
+PtpFilterSendHidOutputReport(
+    _In_ WDFDEVICE Device,
+    _In_ UCHAR ReportId,
+    _In_ PUCHAR pReportData,
+    _In_ ULONG ReportDataSize
+);
+
+NTSTATUS
 PtpFilterGetHidInputReport(
     _In_ WDFDEVICE Device,
     _In_ UCHAR ReportId,

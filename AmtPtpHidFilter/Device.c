@@ -455,9 +455,12 @@ Exit:
     return status;
 }
 
-NTSTATUS
-PtpFilterSendHidFeatureReport(
+// Sends a report to the HID transport (HidBth) through an IOCTL that takes a
+// HID_XFER_PACKET in Irp->UserBuffer: IOCTL_HID_SET_FEATURE or IOCTL_HID_WRITE_REPORT.
+static NTSTATUS
+PtpFilterSendHidReport(
     _In_ WDFDEVICE Device,
+    _In_ ULONG IoControlCode,
     _In_ UCHAR ReportId,
     _In_ PUCHAR pReportData,
     _In_ ULONG ReportDataSize
@@ -473,7 +476,7 @@ PtpFilterSendHidFeatureReport(
 	WDF_OBJECT_ATTRIBUTES attributes;
 
     PAGED_CODE();
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry: ReportId=0x%02x, DataSize=%lu", ReportId, ReportDataSize);
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry: Ioctl=0x%08lX, ReportId=0x%02x, DataSize=%lu", IoControlCode, ReportId, ReportDataSize);
 
     if (Device == NULL || pReportData == NULL) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Invalid parameter");
@@ -526,7 +529,7 @@ PtpFilterSendHidFeatureReport(
     status = WdfIoTargetFormatRequestForInternalIoctl(
         deviceContext->HidIoTarget,
         request,
-        IOCTL_HID_SET_FEATURE,
+        IoControlCode,
         memory,     // Input buffer (report)
         NULL,       // Output buffer
         NULL, NULL);
@@ -553,7 +556,7 @@ PtpFilterSendHidFeatureReport(
         goto Exit;
     }
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Custom feature report sent successfully");
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Custom report sent successfully");
 
 Exit:
     if (request != NULL) {
@@ -562,6 +565,30 @@ Exit:
 
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit: %!STATUS!", status);
     return status;
+}
+
+NTSTATUS
+PtpFilterSendHidFeatureReport(
+    _In_ WDFDEVICE Device,
+    _In_ UCHAR ReportId,
+    _In_ PUCHAR pReportData,
+    _In_ ULONG ReportDataSize
+    )
+{
+    PAGED_CODE();
+    return PtpFilterSendHidReport(Device, IOCTL_HID_SET_FEATURE, ReportId, pReportData, ReportDataSize);
+}
+
+NTSTATUS
+PtpFilterSendHidOutputReport(
+    _In_ WDFDEVICE Device,
+    _In_ UCHAR ReportId,
+    _In_ PUCHAR pReportData,
+    _In_ ULONG ReportDataSize
+    )
+{
+    PAGED_CODE();
+    return PtpFilterSendHidReport(Device, IOCTL_HID_WRITE_REPORT, ReportId, pReportData, ReportDataSize);
 }
 
 NTSTATUS
@@ -595,6 +622,47 @@ PtpFilterSetHapticFeedback( // --> Based on: https://github.com/dos1/Linux-Magic
     status = PtpFilterSendHidFeatureReport(Device, 0xF2, mt2Release, sizeof(mt2Release));
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! PtpFilterSendHidFeatureReport failed: %!STATUS!", status);
+        goto Exit;
+    }
+
+Exit:
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit: %!STATUS!", status);
+    return status;
+}
+
+NTSTATUS
+PtpFilterActuate( // --> Based on: https://github.com/Eriskii/LinuxMagicForce (haptic output report 0xF2 0x53)
+    _In_ WDFDEVICE Device,
+    _In_ ULONG Feedback
+)
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    PDEVICE_CONTEXT deviceContext;
+    // Same layout as the 0x22/0x23 feature reports of PtpFilterSetHapticFeedback, but sent as an
+    // output report: the MT2 fires the actuator once, immediately, instead of storing a setting.
+    BYTE mt2Actuate[] = { 0x53, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x12 };
+
+    PAGED_CODE();
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry: Feedback=0x%06lX", Feedback);
+
+    // The filter is only installed on the Bluetooth MT2. The USB MT2 is driven by AmtPtpDeviceUsbUm,
+    // where the actuator is a separate interface with a different report layout.
+    deviceContext = PtpFilterGetContext(Device);
+    if (deviceContext->VendorID != HID_VID_APPLE_BT) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Vendor not supported: 0x%x", deviceContext->VendorID);
+        status = STATUS_NOT_SUPPORTED;
+        goto Exit;
+    }
+
+    // Feedback uses the encoding of the FeedbackClick setting (e.g. 0x060617 = medium click).
+    mt2Actuate[2] = (BYTE)(Feedback >> 0);
+    mt2Actuate[5] = (BYTE)(Feedback >> 8);
+    mt2Actuate[10] = (BYTE)(Feedback >> 16);
+
+    status = PtpFilterSendHidOutputReport(Device, 0xF2, mt2Actuate, sizeof(mt2Actuate));
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! PtpFilterSendHidOutputReport failed: %!STATUS!", status);
         goto Exit;
     }
 

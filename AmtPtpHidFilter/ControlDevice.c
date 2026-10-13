@@ -3,6 +3,36 @@
 #include <Driver.h>
 #include "ControlDevice.tmh"
 
+static NTSTATUS
+PtpFilterControlActuate(
+    _In_ PDRIVER_CONTEXT DriverContext,
+    _In_ WDFREQUEST Request,
+    _In_ size_t InputBufferLength
+)
+{
+	NTSTATUS status;
+	PULONG pInputBuffer = NULL;
+	ULONG feedback;
+
+	if (DriverContext->CDFirstDevice == NULL) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! CDFirstDevice == NULL");
+		return STATUS_INVALID_DEVICE_STATE;
+	}
+
+	// The input is optional: without it the actuator fires with the current FeedbackClick setting.
+	feedback = DriverContext->FeedbackClick;
+	if (InputBufferLength != 0) {
+		status = WdfRequestRetrieveInputBuffer(Request, sizeof(ULONG), (PVOID*)&pInputBuffer, NULL);
+		if (!NT_SUCCESS(status)) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestRetrieveInputBuffer failed: %!STATUS!", status);
+			return status;
+		}
+		feedback = *pInputBuffer & 0xFFFFFF;
+	}
+
+	return PtpFilterActuate(DriverContext->CDFirstDevice, feedback);
+}
+
 VOID
 PtpFilterEvtIoDeviceControl(
     _In_ WDFQUEUE Queue,
@@ -71,6 +101,10 @@ PtpFilterEvtIoDeviceControl(
 		}
 		break;
 
+	case IOCTL_PTPFILTER_ACTUATE:
+		status = PtpFilterControlActuate(driverContext, Request, InputBufferLength);
+		break;
+
     default:
         TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, 
             "Unsupported IOCTL: 0x%08lX", IoControlCode);
@@ -81,9 +115,37 @@ PtpFilterEvtIoDeviceControl(
     WdfRequestCompleteWithInformation(Request, status, bytesReturned);
 }
 
+// Haptic device: opened by unprivileged apps, so it accepts IOCTL_PTPFILTER_ACTUATE and nothing else.
+VOID
+PtpFilterEvtIoHapticDeviceControl(
+    _In_ WDFQUEUE Queue,
+    _In_ WDFREQUEST Request,
+    _In_ size_t OutputBufferLength,
+    _In_ size_t InputBufferLength,
+    _In_ ULONG IoControlCode
+)
+{
+	NTSTATUS status;
+	PDRIVER_CONTEXT driverContext;
+
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+
+	driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(WdfIoQueueGetDevice(Queue)));
+
+	if (IoControlCode == IOCTL_PTPFILTER_ACTUATE) {
+		status = PtpFilterControlActuate(driverContext, Request, InputBufferLength);
+	} else {
+		TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, "Unsupported IOCTL on the haptic device: 0x%08lX", IoControlCode);
+		status = STATUS_INVALID_DEVICE_REQUEST;
+	}
+
+	WdfRequestComplete(Request, status);
+}
+
 NTSTATUS
 PtpFilterControlDeviceQueueInitialize(
-    _In_ WDFDEVICE Device
+    _In_ WDFDEVICE Device,
+    _In_ PFN_WDF_IO_QUEUE_IO_DEVICE_CONTROL EvtIoDeviceControl
 )
 {
     WDF_IO_QUEUE_CONFIG queueConfig;
@@ -91,7 +153,7 @@ PtpFilterControlDeviceQueueInitialize(
     WDFQUEUE queue;
 
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queueConfig, WdfIoQueueDispatchSequential);
-    queueConfig.EvtIoDeviceControl = PtpFilterEvtIoDeviceControl;
+    queueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
 
     status = WdfIoQueueCreate(Device,
                               &queueConfig,
@@ -106,22 +168,24 @@ PtpFilterControlDeviceQueueInitialize(
     return status;
 }
 
-NTSTATUS
-PtpFilterCreateControlDevice(
-    _In_ WDFDRIVER Driver
+static NTSTATUS
+PtpFilterCreateNamedControlDevice(
+    _In_ WDFDRIVER Driver,
+    _In_ PCUNICODE_STRING DeviceName,
+    _In_ PCUNICODE_STRING SymLink,
+    _In_ PCUNICODE_STRING Sddl,
+    _In_ PFN_WDF_IO_QUEUE_IO_DEVICE_CONTROL EvtIoDeviceControl,
+    _Out_ WDFDEVICE* Device
 )
 {
     NTSTATUS status;
     PWDFDEVICE_INIT deviceInit = NULL;
     WDFDEVICE controlDevice;
     WDF_OBJECT_ATTRIBUTES attributes;
-    PDRIVER_CONTEXT driverContext;
-    
-    DECLARE_CONST_UNICODE_STRING(controlDeviceName, L"\\Device\\AmtPtpControlDeviceUm");
-    DECLARE_CONST_UNICODE_STRING(controlDeviceSymLink, L"\\DosDevices\\AmtPtpControlDeviceUm");
 
-    deviceInit = WdfControlDeviceInitAllocate(Driver, 
-                                              &SDDL_DEVOBJ_SYS_ALL_ADM_ALL);
+    *Device = NULL;
+
+    deviceInit = WdfControlDeviceInitAllocate(Driver, Sddl);
     if (deviceInit == NULL) {
         status = STATUS_INSUFFICIENT_RESOURCES;
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, 
@@ -129,7 +193,7 @@ PtpFilterCreateControlDevice(
         return status;
     }
 
-    status = WdfDeviceInitAssignName(deviceInit, &controlDeviceName);
+    status = WdfDeviceInitAssignName(deviceInit, DeviceName);
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, 
             "WdfDeviceInitAssignName failed: %!STATUS!", status);
@@ -145,7 +209,7 @@ PtpFilterCreateControlDevice(
         return status;
     }
 
-    status = WdfDeviceCreateSymbolicLink(controlDevice, &controlDeviceSymLink);
+    status = WdfDeviceCreateSymbolicLink(controlDevice, SymLink);
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, 
             "WdfDeviceCreateSymbolicLink failed: %!STATUS!", status);
@@ -153,7 +217,7 @@ PtpFilterCreateControlDevice(
         return status;
     }
 
-    status = PtpFilterControlDeviceQueueInitialize(controlDevice);
+    status = PtpFilterControlDeviceQueueInitialize(controlDevice, EvtIoDeviceControl);
     if (!NT_SUCCESS(status)) {
         WdfObjectDelete(controlDevice);
         return status;
@@ -161,8 +225,46 @@ PtpFilterCreateControlDevice(
 
     WdfControlFinishInitializing(controlDevice);
 
+    *Device = controlDevice;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+PtpFilterCreateControlDevice(
+    _In_ WDFDRIVER Driver
+)
+{
+    NTSTATUS status;
+    WDFDEVICE controlDevice;
+    WDFDEVICE hapticDevice;
+    PDRIVER_CONTEXT driverContext;
+    
+    DECLARE_CONST_UNICODE_STRING(controlDeviceName, L"\\Device\\AmtPtpControlDeviceUm");
+    DECLARE_CONST_UNICODE_STRING(controlDeviceSymLink, L"\\DosDevices\\AmtPtpControlDeviceUm");
+    DECLARE_CONST_UNICODE_STRING(hapticDeviceName, L"\\Device\\AmtPtpHapticDeviceUm");
+    DECLARE_CONST_UNICODE_STRING(hapticDeviceSymLink, L"\\DosDevices\\AmtPtpHapticDeviceUm");
+    // SYSTEM and Administrators: all access. Interactive users: read/write, so that an app
+    // running in the user's session can fire the actuator without elevation.
+    DECLARE_CONST_UNICODE_STRING(hapticDeviceSddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)");
+
+    status = PtpFilterCreateNamedControlDevice(Driver, &controlDeviceName, &controlDeviceSymLink,
+        &SDDL_DEVOBJ_SYS_ALL_ADM_ALL, PtpFilterEvtIoDeviceControl, &controlDevice);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    // The haptic device is optional: settings and battery keep working without it.
+    status = PtpFilterCreateNamedControlDevice(Driver, &hapticDeviceName, &hapticDeviceSymLink,
+        &hapticDeviceSddl, PtpFilterEvtIoHapticDeviceControl, &hapticDevice);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_WARNING, TRACE_DRIVER, 
+            "Haptic device not created: %!STATUS!, continuing without it", status);
+        hapticDevice = NULL;
+    }
+
     driverContext = PtpFilterDriverGetContext(Driver);
     driverContext->ControlDevice = controlDevice;
+    driverContext->HapticDevice = hapticDevice;
 
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, 
         "Control device created successfully");
@@ -181,5 +283,11 @@ PtpFilterDeleteControlDevice(
         TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Deleting Control Device");
         WdfObjectDelete(driverContext->ControlDevice);
         driverContext->ControlDevice = NULL;
+    }
+
+    if (driverContext->HapticDevice != NULL) {
+        TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Deleting Haptic Device");
+        WdfObjectDelete(driverContext->HapticDevice);
+        driverContext->HapticDevice = NULL;
     }
 }

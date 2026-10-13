@@ -16,6 +16,7 @@ EXTERN_C_START
 // Driver context
 typedef struct _DRIVER_CONTEXT {
     WDFDEVICE ControlDevice;
+	WDFDEVICE HapticDevice;
 	WDFDEVICE CDFirstDevice;
 	
 	BOOLEAN ButtonDisabled;
