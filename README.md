@@ -22,7 +22,7 @@ The previous version of this project used a hack to install itself in the Driver
 
 ### Note about Windows 10
 
-Windows 10 AMD64 is supported through [this workaround](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/issues/25#issuecomment-4084774884).
+Windows 10 AMD64 is supported through a self-signed driver package.
 
 Windows 10 ARM64 is not supported.
 
@@ -31,4 +31,4 @@ Windows 10 ARM64 is not supported.
 - [This excellent PR](https://github.com/imbushuo/mac-precision-touchpad/pull/533) of [1Revenger1](https://github.com/1Revenger1) to the imbushuo repo, which fixes the "near field fingers" problem, cleans up the code, and removes the QueryPerformanceCounter call in the interrupt function.
 - The haptic feedback control messages sent by the driver to the MT2 in this project are based on the excellent reverse engineering work of [dos1](https://github.com/dos1) ([here](https://github.com/mwyborski/Linux-Magic-Trackpad-2-Driver/issues/28#issuecomment-451625504)).
 - My long-time friends at [Landlogic IT](https://landlogic.it/), who took care of the grueling process of gaining access to Microsoft's Hardware Dashboard and who take care of signing the driver packages for me.
-- @ordens, Taylor Sharp, @Wikiwix, @nagromc, @danspel, 乔​泽昱, Purasu Oy, Patrick Adler for their contribution to the purchase of the EV certificate ([more info here](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/issues/31)).
+- @ordens, Taylor Sharp, @Wikiwix, @nagromc, @danspel, 乔​泽昱, Purasu Oy, Patrick Adler, @macleodal for their contribution to the purchase of the EV certificate ([more info here](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/issues/31)).
