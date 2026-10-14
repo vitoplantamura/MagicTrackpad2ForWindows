@@ -96,6 +96,7 @@ EVT_WDF_DEVICE_D0_ENTRY PtpFilterDeviceD0Entry;
 EVT_WDF_DEVICE_D0_EXIT PtpFilterDeviceD0Exit;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_INIT PtpFilterSelfManagedIoInit;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_RESTART PtpFilterSelfManagedIoRestart;
+EVT_WDF_DEVICE_SELF_MANAGED_IO_CLEANUP PtpFilterSelfManagedIoCleanup;
 
 // Device Management routines
 NTSTATUS
@@ -113,6 +114,28 @@ PtpFilterSetHapticFeedback(
     _In_ WDFDEVICE Device,
     _In_ ULONG FeedbackClick,
     _In_ ULONG FeedbackRelease
+);
+
+NTSTATUS
+PtpFilterActuate(
+    _In_ WDFDEVICE Device,
+    _In_ ULONG Feedback
+);
+
+NTSTATUS
+PtpFilterSendHidFeatureReport(
+    _In_ WDFDEVICE Device,
+    _In_ UCHAR ReportId,
+    _In_ PUCHAR pReportData,
+    _In_ ULONG ReportDataSize
+);
+
+NTSTATUS
+PtpFilterSendHidOutputReport(
+    _In_ WDFDEVICE Device,
+    _In_ UCHAR ReportId,
+    _In_ PUCHAR pReportData,
+    _In_ ULONG ReportDataSize
 );
 
 NTSTATUS

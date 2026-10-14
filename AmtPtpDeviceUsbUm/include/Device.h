@@ -124,6 +124,13 @@ AmtPtpSetHapticFeedback(
 );
 
 _IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+AmtPtpActuate(
+	_In_ PDEVICE_CONTEXT DeviceContext,
+	_In_ ULONG Feedback
+);
+
+_IRQL_requires_(PASSIVE_LEVEL)
 ULONG ReadSettingValue(
 	_In_ PWCHAR SettingName,
 	_In_ ULONG DefaultValue

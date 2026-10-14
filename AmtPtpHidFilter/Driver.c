@@ -38,6 +38,15 @@ DriverEntry(
         WPP_CLEANUP(DriverObject);
         return status;
     }
+
+    // From here a failure deletes the driver object, and its cleanup callback stops WPP.
+    WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+    attributes.ParentObject = driver;
+    status = WdfWaitLockCreate(&attributes, &PtpFilterDriverGetContext(driver)->HapticLock);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER, "WdfWaitLockCreate failed %!STATUS!", status);
+        return status;
+    }
 	
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Driver Initialized");
     return STATUS_SUCCESS;
