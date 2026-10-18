@@ -529,9 +529,9 @@ AmtPtpServiceTouchInputInterruptType5(
 		DeviceContext->PrevPtpReportAux1.Id = (UINT32)-1;
 		DeviceContext->PrevPtpReportAux2.Id = (UINT32)-1;
 		DeviceContext->ButtonDisabled = ReadSettingValue(L"ButtonDisabled", 0) ? TRUE : FALSE;
-		DeviceContext->StopPressure = ReadSettingValue(L"StopPressure", 0);
+		DeviceContext->StopPressure = ReadSettingValue(L"StopPressure", 0xffffffff);
 		DeviceContext->StopSize = ReadSettingValue(L"StopSize", 0xffffffff);
-		DeviceContext->IgnoreButtonFinger = ReadSettingValue(L"IgnoreButtonFinger", 1) ? TRUE : FALSE;
+		DeviceContext->IgnoreButtonFinger = ReadSettingValue(L"IgnoreButtonFinger", 0) ? TRUE : FALSE;
 		DeviceContext->IgnoreNearFingers = ReadSettingValue(L"IgnoreNearFingers", 1) ? TRUE : FALSE;
 		DeviceContext->PalmRejection = ReadSettingValue(L"PalmRejection", 0) ? TRUE : FALSE;
 	}

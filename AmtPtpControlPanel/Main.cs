@@ -118,9 +118,9 @@ namespace AmtPtpControlPanel
             Int32 buttonDisabled = 0;
             Int32 feedbackClick = 0x060617;
             Int32 feedbackRelease = 0x000014;
-            Int32 stopPressure = 0;
+            Int32 stopPressure = -1;
             Int32 stopSize = -1;
-            Int32 ignoreButtonFinger = 1;
+            Int32 ignoreButtonFinger = 0;
             Int32 ignoreNearFingers = 1;
             Int32 palmRejection = 1;
 
@@ -198,9 +198,9 @@ namespace AmtPtpControlPanel
             Int32 buttonDisabled = 0;
             Int32 feedbackClick = 0x060617;
             Int32 feedbackRelease = 0x000014;
-            Int32 stopPressure = 0;
+            Int32 stopPressure = -1;
             Int32 stopSize = -1;
-            Int32 ignoreButtonFinger = 1;
+            Int32 ignoreButtonFinger = 0;
             Int32 ignoreNearFingers = 1;
             Int32 palmRejection = 1;
 
