@@ -1089,3 +1089,78 @@ AmtPtpEmergResetDevice(
 	return status;
 
 }
+
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+AmtPtpActuate( // --> Based on: https://github.com/Eriskii/LinuxMagicForce (haptic output report 0x53)
+	_In_ PDEVICE_CONTEXT DeviceContext,
+	_In_ ULONG Feedback
+)
+{
+	NTSTATUS						status;
+	WDF_MEMORY_DESCRIPTOR			memoryDescriptor;
+	WDF_USB_CONTROL_SETUP_PACKET	setupPacket;
+	WDF_REQUEST_SEND_OPTIONS		sendOptions;
+	ULONG							cbTransferred = 0;
+	// Over USB the haptic output report has its own ID, 0x53: the Bluetooth report 0xF2 0x53 ...
+	// without the 0xF2, and with byte 8 repeating byte 10 (as LinuxMagicForce sends it).
+	BYTE							mt2Actuate[] = { 0x53, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x00, 0x01, 0x00, 0x18, 0x48, 0x12 };
+
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Entry: Feedback=0x%06lX", Feedback);
+
+	if (!AmtPtpIsMagicTrackpad2(DeviceContext)) {
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Device family has no haptic feedback, skipping");
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	// Feedback uses the encoding of the FeedbackClick setting (e.g. 0x060617 = medium click).
+	// The second and third bytes are capped as in the Bluetooth filter: above 0x20 and 0x40
+	// LinuxMagicForce calls them experimental hardware-stress settings.
+	mt2Actuate[2] = (BYTE)(Feedback >> 0);
+	mt2Actuate[5] = (BYTE)min((Feedback >> 8) & 0xFF, 0x20UL);
+	mt2Actuate[10] = (BYTE)min((Feedback >> 16) & 0xFF, 0x40UL);
+	mt2Actuate[8] = mt2Actuate[10];
+
+	WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
+		&memoryDescriptor,
+		mt2Actuate,
+		sizeof(mt2Actuate)
+	);
+
+	// SET_REPORT (Output, ID 0x53) to interface 2, like the 0x22/0x23 feature reports.
+	WDF_USB_CONTROL_SETUP_PACKET_INIT(
+		&setupPacket,
+		BmRequestHostToDevice,
+		BmRequestToInterface,
+		9,
+		0x0253,
+		2
+	);
+
+	setupPacket.Packet.bm.Request.Type = BmRequestClass;
+
+	// A click that comes seconds late is useless; don't let an unresponsive device hold the pipe.
+	WDF_REQUEST_SEND_OPTIONS_INIT(&sendOptions, WDF_REQUEST_SEND_OPTION_TIMEOUT);
+	WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&sendOptions, WDF_REL_TIMEOUT_IN_SEC(3));
+
+	status = WdfUsbTargetDeviceSendControlTransferSynchronously(
+		DeviceContext->UsbDevice,
+		WDF_NO_HANDLE,
+		&sendOptions,
+		&setupPacket,
+		&memoryDescriptor,
+		&cbTransferred
+	);
+
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(
+			TRACE_LEVEL_ERROR,
+			TRACE_DEVICE,
+			"%!FUNC! WdfUsbTargetDeviceSendControlTransferSynchronously (Write) failed with %!STATUS!",
+			status
+		);
+	}
+
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "%!FUNC! Exit: %!STATUS!", status);
+	return status;
+}

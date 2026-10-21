@@ -1,6 +1,7 @@
 // ControlPanel.c: Control Panel named-pipe server.
 
 #include <driver.h>
+#include <sddl.h>
 #include "ControlPanel.tmh"
 
 //
@@ -14,6 +15,20 @@
 //
 #define CONTROLPANEL_CMD_RELOAD_SETTINGS    0x00
 #define CONTROLPANEL_CMD_GET_BATTERY_LEVEL  0x01
+// Fires the haptic actuator once. Optionally followed, in the same write, by three bytes:
+// the strength in the encoding of the FeedbackClick setting, low byte first (e.g. 17 06 06
+// for 0x060617, a medium click). Without them the current FeedbackClick setting is used.
+// Actuations are at least 20 ms apart.
+#define CONTROLPANEL_CMD_ACTUATE            0x02
+
+// Minimum time between two actuations, in ms (as LinuxMagicForce uses).
+#define ACTUATE_MIN_GAP_MS                  20
+
+// SYSTEM, Administrators, the UMDF host (LocalService, User-Mode Drivers): all access.
+// Interactive users: read/write, so that an app in the user's session can fire the actuator
+// without elevation. This DACL is only applied when the AllowNonAdminAccess setting is
+// present and non-zero; otherwise the pipe keeps its default (admin-only) DACL.
+#define CONTROLPANEL_PIPE_SDDL L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;LS)(A;;GA;;;UD)(A;;GRGW;;;IU)"
 
 //
 // Response status bytes.
@@ -121,6 +136,18 @@ AmtPtpReadBatteryLevel(
 	return STATUS_SUCCESS;
 }
 
+// Milliseconds on a precise monotonic clock (GetTickCount64 steps by ~16 ms).
+static
+ULONGLONG
+AmtPtpMilliseconds(VOID)
+{
+    LARGE_INTEGER counter, frequency;
+
+    QueryPerformanceCounter(&counter);
+    QueryPerformanceFrequency(&frequency);
+    return (ULONGLONG)(counter.QuadPart / (frequency.QuadPart / 1000));
+}
+
 //
 // Waits on either the overlapped I/O event or the stop event.
 // Returns TRUE if the I/O completed (caller must call GetOverlappedResult),
@@ -170,10 +197,12 @@ AmtPtpControlPanelPipeThread(
     HANDLE          ioEvent = NULL;
     OVERLAPPED      ov;
     BOOL            connected;
-    UCHAR           requestByte = 0;
+    UCHAR           request[4] = { 0 };
     UCHAR           response[2] = { 0 };
     DWORD           bytesRead = 0;
     DWORD           bytesWritten = 0;
+    SECURITY_ATTRIBUTES pipeSecurity = { sizeof(SECURITY_ATTRIBUTES), NULL, FALSE };
+    ULONGLONG       lastActuate = 0;
 
     ioEvent = CreateEventW(NULL, TRUE /*manual reset*/, FALSE, NULL);
     if (ioEvent == NULL) {
@@ -182,17 +211,32 @@ AmtPtpControlPanelPipeThread(
         return 0;
     }
 
+    // Non-admins may open the pipe only when the AllowNonAdminAccess setting is present
+    // and non-zero. Otherwise leave the default DACL, which only lets administrators write.
+    if (ReadSettingValue(L"AllowNonAdminAccess", 0) != 0) {
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(CONTROLPANEL_PIPE_SDDL, SDDL_REVISION_1,
+                &pipeSecurity.lpSecurityDescriptor, NULL)) {
+            TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
+                "%!FUNC! ConvertStringSecurityDescriptorToSecurityDescriptorW failed %lu, using the default DACL", GetLastError());
+            pipeSecurity.lpSecurityDescriptor = NULL;
+        }
+    }
+
     while (InterlockedCompareExchange(&devCtx->ControlPanelPipeRunning, 1, 1) == 1) {
 
         hPipe = CreateNamedPipeW(
             CONTROLPANEL_PIPE_NAME,
             PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,   // <-- overlapped
-            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+            // Message mode so a request is read as one message: the 1-byte commands
+            // (RELOAD_SETTINGS / GET_BATTERY_LEVEL) and the 1- or 4-byte ACTUATE command
+            // all complete their read as soon as that single write arrives. Byte mode
+            // would make the 4-byte read below block forever for the 1-byte commands.
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
             PIPE_UNLIMITED_INSTANCES,
             CONTROLPANEL_PIPE_BUFFER,
             CONTROLPANEL_PIPE_BUFFER,
             0,
-            NULL
+            pipeSecurity.lpSecurityDescriptor != NULL ? &pipeSecurity : NULL
         );
 
         if (hPipe == INVALID_HANDLE_VALUE) {
@@ -255,13 +299,16 @@ AmtPtpControlPanelPipeThread(
         }
 
         //
-        // Overlapped read of one request byte.
+        // Overlapped read of one request message: the command byte and, for ACTUATE,
+        // its optional three strength bytes. Message mode completes the read as soon as
+        // the client's single write arrives, whether it is 1 byte (legacy commands) or
+        // 4 bytes (ACTUATE with an explicit strength).
         //
         RtlZeroMemory(&ov, sizeof(ov));
         ov.hEvent = ioEvent;
         ResetEvent(ioEvent);
 
-        if (!ReadFile(hPipe, &requestByte, 1, &bytesRead, &ov)) {
+        if (!ReadFile(hPipe, request, sizeof(request), &bytesRead, &ov)) {
             DWORD err = GetLastError();
 
             if (err == ERROR_IO_PENDING) {
@@ -277,14 +324,14 @@ AmtPtpControlPanelPipeThread(
             }
         }
 
-        if (bytesRead != 1) {
+        if (bytesRead < 1) {
             goto cleanup_pipe;
         }
 
         //
         // Dispatch the command.
         //
-        switch (requestByte) {
+        switch (request[0]) {
         case CONTROLPANEL_CMD_RELOAD_SETTINGS:
         {
             ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
@@ -310,6 +357,27 @@ AmtPtpControlPanelPipeThread(
                 ? CONTROLPANEL_STATUS_OK
                 : CONTROLPANEL_STATUS_FAIL;
             response[1] = level;
+            break;
+        }
+        case CONTROLPANEL_CMD_ACTUATE:
+        {
+            // One request at a time is served, so the gap needs no lock.
+            ULONG       feedback = (bytesRead == 4)
+                ? (ULONG)request[1] | ((ULONG)request[2] << 8) | ((ULONG)request[3] << 16)
+                : ReadSettingValue(L"FeedbackClick", 0x08081E);
+            ULONGLONG   elapsed = AmtPtpMilliseconds() - lastActuate;
+            NTSTATUS    st;
+
+            if (elapsed < ACTUATE_MIN_GAP_MS) {
+                Sleep((DWORD)(ACTUATE_MIN_GAP_MS - elapsed));
+            }
+            lastActuate = AmtPtpMilliseconds();
+            st = AmtPtpActuate(devCtx, feedback);
+
+            response[0] = NT_SUCCESS(st)
+                ? CONTROLPANEL_STATUS_OK
+                : CONTROLPANEL_STATUS_FAIL;
+            response[1] = 0;
             break;
         }
         default:
@@ -357,6 +425,9 @@ cleanup_pipe:
     }
 
     CloseHandle(ioEvent);
+    if (pipeSecurity.lpSecurityDescriptor != NULL) {
+        LocalFree(pipeSecurity.lpSecurityDescriptor);
+    }
     return 0;
 }
 

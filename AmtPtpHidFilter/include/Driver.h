@@ -17,6 +17,16 @@ EXTERN_C_START
 typedef struct _DRIVER_CONTEXT {
     WDFDEVICE ControlDevice;
 	WDFDEVICE CDFirstDevice;
+
+	// \\.\AmtPtpHapticDeviceUm. Unlike the control device it is not deleted with the trackpad
+	// while an app holds it open: the app's handle keeps working across a reconnect, and the
+	// name stays free for the next trackpad. HapticLock guards the fields below.
+	WDFWAITLOCK HapticLock;
+	WDFDEVICE HapticDevice;
+	LONG HapticHandles;           // open file objects on HapticDevice
+	LONG Trackpads;               // trackpad devices that exist (created, not yet cleaned up)
+	WDFDEVICE HapticTrackpad;     // started trackpad that IOCTL_PTPFILTER_ACTUATE sends to
+	ULONGLONG LastActuateTime;    // KeQueryInterruptTime() of the last actuation
 	
 	BOOLEAN ButtonDisabled;
 	ULONG StopPressure;
@@ -33,6 +43,12 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DRIVER_CONTEXT, PtpFilterDriverGetContext)
 VOID
 PtpFilterReadSettings(
 	_Inout_ PDRIVER_CONTEXT DriverContext
+);
+
+ULONG
+PtpFilterReadSettingValue(
+	_In_ PWCHAR SettingName,
+	_In_ ULONG DefaultValue
 );
 
 // Common entry points
