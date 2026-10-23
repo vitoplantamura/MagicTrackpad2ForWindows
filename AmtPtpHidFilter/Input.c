@@ -47,8 +47,8 @@ PtpFilterInputReplenishTransportRequests(
 
 	deviceContext = PtpFilterGetContext(Device);
 
-	// Only issue reads when fully configured. The recovery timer calls back here
-	// after it has reconfigured the device.
+	// Only issue reads while DeviceConfigured is set: from device start, and again after
+	// the recovery timer has reconfigured the device following a transport failure.
 	if (deviceContext->DeviceConfigured != TRUE) {
 		return;
 	}
