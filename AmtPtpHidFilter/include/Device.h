@@ -11,6 +11,10 @@ DEFINE_GUID(GUID_DEVICEINTERFACE_AmtPtpHidFilter,
 // Definition
 #define HID_XFER_PACKET_SIZE 32
 
+// How long to wait for the pad to acknowledge a SET_FEATURE. On a new Bluetooth connection
+// the first acknowledgement has been seen to take about 5 s, and sometimes it never comes.
+#define PTP_FEATURE_REPORT_TIMEOUT_SEC 8
+
 #define HID_VID_APPLE_USB 0x05ac
 #define HID_VID_APPLE_BT  0x004c
 #define HID_PID_MAGIC_TRACKPAD_2 0x0265
@@ -57,8 +61,12 @@ typedef struct _DEVICE_CONTEXT
     // completes. Never reset: in-flight reads survive D0 transitions and decrement
     // on completion.
     volatile LONG OutstandingTransportReads;
+    // Set while PtpFilterRecoveryTimerCallback is configuring the device.
+    volatile LONG ConfigurationInProgress;
 
-    // Device State
+    // Device State. TRUE while transport reads may be issued. Set when self-managed I/O starts
+    // or restarts, before the multitouch configuration has run; cleared on D0 exit and on a
+    // transport failure until the recovery timer has reconfigured the device.
     BOOLEAN DeviceConfigured;
 
     // PTP report specific
