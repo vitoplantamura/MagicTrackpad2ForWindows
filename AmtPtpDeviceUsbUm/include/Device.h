@@ -41,6 +41,7 @@ typedef struct _DEVICE_CONTEXT
 	BOOL                        IgnoreButtonFinger;
 	BOOL                        IgnoreNearFingers;
 	BOOL                        PalmRejection;
+	BOOL                        InvertMovement;
 
 	//
 	// Battery-level named-pipe server

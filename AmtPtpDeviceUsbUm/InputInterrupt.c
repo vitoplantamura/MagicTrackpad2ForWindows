@@ -534,6 +534,7 @@ AmtPtpServiceTouchInputInterruptType5(
 		DeviceContext->IgnoreButtonFinger = ReadSettingValue(L"IgnoreButtonFinger", 0) ? TRUE : FALSE;
 		DeviceContext->IgnoreNearFingers = ReadSettingValue(L"IgnoreNearFingers", 1) ? TRUE : FALSE;
 		DeviceContext->PalmRejection = ReadSettingValue(L"PalmRejection", 0) ? TRUE : FALSE;
+		DeviceContext->InvertMovement = ReadSettingValue(L"InvertMovement", 0) ? TRUE : FALSE;
 	}
 
 	if (DeviceContext->ButtonDisabled)
@@ -590,6 +591,15 @@ AmtPtpServiceTouchInputInterruptType5(
 
 			x = (x - DeviceContext->DeviceInfo->x.min) > 0 ? (x - DeviceContext->DeviceInfo->x.min) : 0;
 			y = (y - DeviceContext->DeviceInfo->y.min) > 0 ? (y - DeviceContext->DeviceInfo->y.min) : 0;
+
+			// Optional movement inversion: when the trackpad is used upside-down (USB-C port
+			// facing the opposite way), mirror X and Y so the reported movement follows the finger.
+			if (DeviceContext->InvertMovement) {
+				x = (DeviceContext->DeviceInfo->x.max - DeviceContext->DeviceInfo->x.min) - x;
+				y = (DeviceContext->DeviceInfo->y.max - DeviceContext->DeviceInfo->y.min) - y;
+				if (x < 0) x = 0;
+				if (y < 0) y = 0;
+			}
 
 			PtpReport.Contacts[i].ContactID = f->Id;
 			// 0x1 = Transition between states

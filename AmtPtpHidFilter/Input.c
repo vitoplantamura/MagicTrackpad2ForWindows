@@ -318,6 +318,15 @@ PtpFilterInputParseMT2Report(
 		x = (x - DeviceContext->X.min) > 0 ? (x - DeviceContext->X.min) : 0;
 		y = (y - DeviceContext->Y.min) > 0 ? (y - DeviceContext->Y.min) : 0;
 
+		// Optional movement inversion: when the trackpad is used upside-down (USB-C port
+		// facing the opposite way), mirror X and Y so the reported movement follows the finger.
+		if (driverContext->InvertMovement) {
+			x = (DeviceContext->X.max - DeviceContext->X.min) - x;
+			y = (DeviceContext->Y.max - DeviceContext->Y.min) - y;
+			if (x < 0) x = 0;
+			if (y < 0) y = 0;
+		}
+
 		ptpOutputReport.Contacts[i].ContactID = f->Id;
 
 		// 0x1 = Transition between states

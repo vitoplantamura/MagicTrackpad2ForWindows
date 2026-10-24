@@ -34,6 +34,7 @@ typedef struct _DRIVER_CONTEXT {
 	BOOLEAN IgnoreButtonFinger;
 	BOOLEAN IgnoreNearFingers;
 	BOOLEAN PalmRejection;
+	BOOLEAN InvertMovement;
 	ULONG FeedbackClick;
 	ULONG FeedbackRelease;
 } DRIVER_CONTEXT, *PDRIVER_CONTEXT;
