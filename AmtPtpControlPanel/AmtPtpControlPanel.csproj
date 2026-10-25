@@ -81,6 +81,7 @@
       <DependentUpon>Main.cs</DependentUpon>
     </Compile>
     <Compile Include="Program.cs" />
+    <Compile Include="LocalizationManager.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="Main.resx">
       <DependentUpon>Main.cs</DependentUpon>
@@ -96,6 +97,9 @@
       <DesignTime>True</DesignTime>
     </Compile>
     <None Include="app.manifest" />
+    <None Include="AmtPtpControlPanel.Localization.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>

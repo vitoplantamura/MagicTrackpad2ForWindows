@@ -16,6 +16,7 @@ namespace AmtPtpControlPanel
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            LocalizationManager.Initialize();
             Application.Run(new Main());
         }
     }

@@ -93,7 +93,10 @@ namespace AmtPtpControlPanel
                 {
                     ctlBatteryProgressBar.DisplayType = ProgressBarWithPercentage.TextDisplayType.Percent;
                     ctlBatteryProgressBar.Value = (int)level;
-                    ctlBatteryGroupBox.Text = "Battery (" + source + "): --- LAST UPDATED: " + DateTime.Now.ToString();
+                    ctlBatteryGroupBox.Text = string.Format(
+                        LocalizationManager.GetString("Battery.LastUpdated", "Battery ({0}): --- LAST UPDATED: {1}"),
+                        source,
+                        DateTime.Now.ToString());
                 }
             };
 
@@ -102,13 +105,19 @@ namespace AmtPtpControlPanel
             else if (UsbDevice.GetBattery(out level))
                 show("USB");
             else
-                MessageBox.Show("No Magic Trackpad 2 connected via USB or Bluetooth found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(
+                    LocalizationManager.GetString("Message.NoDevice", "No Magic Trackpad 2 connected via USB or Bluetooth found."),
+                    LocalizationManager.GetString("Message.Error", "Error"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
         }
 
         private delegate void delStringRefInt32Void(string _1, ref Int32 _2);
 
         private void Main_Load(object sender, EventArgs e)
         {
+            LocalizationManager.Apply(this);
+
             ctlStopPressureValue.Location = new Point(ctlStopPressure.Right, ctlStopPressureValue.Location.Y);
             ctlStopPressureLabel.Location = new Point(ctlStopPressureValue.Right, ctlStopPressureLabel.Location.Y);
 
@@ -240,7 +249,11 @@ namespace AmtPtpControlPanel
 
                 if (!Int32.TryParse(ctlStopPressureValue.Text, out stopPressure) || stopPressure < 0)
                 {
-                    MessageBox.Show("Pressure must be greater than or equal to 0.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(
+                        LocalizationManager.GetString("Message.PressureInvalid", "Pressure must be greater than or equal to 0."),
+                        LocalizationManager.GetString("Message.Error", "Error"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
                     return false;
                 }
             }
@@ -250,7 +263,11 @@ namespace AmtPtpControlPanel
 
                 if (!Int32.TryParse(ctlStopSizeValue.Text, out stopSize) || stopSize < 0)
                 {
-                    MessageBox.Show("Size must be greater than or equal to 0.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(
+                        LocalizationManager.GetString("Message.SizeInvalid", "Size must be greater than or equal to 0."),
+                        LocalizationManager.GetString("Message.Error", "Error"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
                     return false;
                 }
             }
@@ -283,7 +300,11 @@ namespace AmtPtpControlPanel
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Error writing to the registry: " + ex.ToString(), "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(
+                    string.Format(LocalizationManager.GetString("Message.RegistryWriteError", "Error writing to the registry: {0}"), ex),
+                    LocalizationManager.GetString("Message.Error", "Error"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
                 return false;
             }
 
@@ -624,7 +645,9 @@ namespace AmtPtpControlPanel
                 {
                     if (showMessageBox)
                     {
-                        MessageBox.Show($"Failed to open device. Error: {Marshal.GetLastWin32Error()}");
+                        MessageBox.Show(string.Format(
+                            LocalizationManager.GetString("Message.OpenDeviceFailed", "Failed to open device. Error: {0}"),
+                            Marshal.GetLastWin32Error()));
                     }
                     return false;
                 }
@@ -654,7 +677,9 @@ namespace AmtPtpControlPanel
 
                 if (!success && showMessageBox)
                 {
-                    MessageBox.Show($"DeviceIoControl failed. Error: {Marshal.GetLastWin32Error()}");
+                    MessageBox.Show(string.Format(
+                        LocalizationManager.GetString("Message.DeviceIoControlFailed", "DeviceIoControl failed. Error: {0}"),
+                        Marshal.GetLastWin32Error()));
                 }
 
                 return success;
