@@ -244,6 +244,7 @@ PtpFilterSelfManagedIoInit(
 {
     NTSTATUS status;
     PDEVICE_CONTEXT deviceContext;
+    PDRIVER_CONTEXT driverContext;
     WDF_MEMORY_DESCRIPTOR hidAttributeMemoryDescriptor;
     HID_DEVICE_ATTRIBUTES deviceAttributes;
 
@@ -283,14 +284,24 @@ PtpFilterSelfManagedIoInit(
     // The HID transport is usable from here on: IOCTL_PTPFILTER_ACTUATE may send to it.
     PtpFilterHapticTrackpadStarted(Device);
 
-    status = PtpFilterConfigureMultiTouch(Device);
-    if (!NT_SUCCESS(status)) {
-        // If this failed, we will retry after 2 seconds (and pretend nothing happens)
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! PtpFilterConfigureMultiTouch failed, Status = %!STATUS!", status);
-        status = STATUS_SUCCESS;
-        WdfTimerStart(deviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(2));
-        goto exit;
-    }
+    // Coordinate ranges (the same over USB and Bluetooth). Set here, not in
+    // PtpFilterConfigureMultiTouch, because input is parsed before that has run.
+    deviceContext->X.snratio = 250;
+    deviceContext->X.min = -3678;
+    deviceContext->X.max = 3934;
+    deviceContext->Y.snratio = 250;
+    deviceContext->Y.min = -2479;
+    deviceContext->Y.max = 2586;
+
+    // Input processing also needs the settings.
+    driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(Device));
+    PtpFilterReadSettings(driverContext);
+
+    // Configure from the recovery timer, not here: this callback is on the PnP start path,
+    // and after a fresh pairing the pad may never acknowledge the first SET_FEATURE, which
+    // held the start (and the touch pad above it) until the Bluetooth link dropped. Allow
+    // reads now: the pad may still be in multitouch mode from its previous host.
+    WdfTimerStart(deviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(1));
 
     // Stamp last query performance counter
     KeQueryPerformanceCounter(&deviceContext->LastReportTime);
@@ -329,14 +340,9 @@ PtpFilterSelfManagedIoRestart(
 
     // If this is first D0, it will be done in self-managed IO init.
     if (deviceContext->IsHidIoDetourCompleted) {
-        status = PtpFilterConfigureMultiTouch(Device);
-        if (!NT_SUCCESS(status)) {
-            TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! PtpFilterConfigureMultiTouch failed, Status = %!STATUS!", status);
-            // If this failed, we will retry after 2 seconds (and pretend nothing happens)
-            status = STATUS_SUCCESS;
-            WdfTimerStart(deviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(2));
-            goto exit;
-        }
+        // As in self-managed IO init, do not block the power-up path on the pad: the
+        // recovery timer reconfigures it.
+        WdfTimerStart(deviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(1));
     }
     else {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! HID detour should already complete here");
@@ -569,7 +575,9 @@ PtpFilterSendHidReport(
     }
     irp->UserBuffer = pHidPacket;
 
-    // Send synchronously
+    // Send synchronously, with a timeout if the caller gives one: the pad does not always
+    // acknowledge a report. On timeout KMDF cancels the request and still waits for the
+    // transport to complete it.
     WDF_REQUEST_SEND_OPTIONS sendOptions;
     WDF_REQUEST_SEND_OPTIONS_INIT(&sendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS);
     if (Timeout != 0) {
@@ -579,6 +587,14 @@ PtpFilterSendHidReport(
     if (!WdfRequestSend(request, deviceContext->HidIoTarget, &sendOptions)) {
         status = WdfRequestGetStatus(request);
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestSend failed: %!STATUS!", status);
+        goto Exit;
+    }
+
+    // A synchronous send returns TRUE once the request is sent; how it completed (a failure or
+    // the timeout) is only in its status.
+    status = WdfRequestGetStatus(request);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Report 0x%02x failed: %!STATUS!", ReportId, status);
         goto Exit;
     }
 
@@ -602,7 +618,8 @@ PtpFilterSendHidFeatureReport(
     )
 {
     PAGED_CODE();
-    return PtpFilterSendHidReport(Device, IOCTL_HID_SET_FEATURE, ReportId, pReportData, ReportDataSize, 0);
+    // Bounded, because the pad may never acknowledge a SET_FEATURE: see PTP_FEATURE_REPORT_TIMEOUT_SEC.
+    return PtpFilterSendHidReport(Device, IOCTL_HID_SET_FEATURE, ReportId, pReportData, ReportDataSize, WDF_REL_TIMEOUT_IN_SEC(PTP_FEATURE_REPORT_TIMEOUT_SEC));
 }
 
 NTSTATUS
@@ -719,7 +736,7 @@ PtpFilterConfigureMultiTouch(
     WDF_REQUEST_SEND_OPTIONS configRequestSendOptions;
     WDFREQUEST configRequest;
     PIRP pConfigIrp = NULL;
-	PDRIVER_CONTEXT driverContext;
+	PDRIVER_CONTEXT driverContext = NULL;
 
     PAGED_CODE();
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
@@ -741,20 +758,12 @@ PtpFilterConfigureMultiTouch(
     if (deviceContext->VendorID == HID_VID_APPLE_BT) {
 		driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(Device));
         PtpFilterReadSettings(driverContext);
-		PtpFilterSetHapticFeedback(Device, driverContext->FeedbackClick, driverContext->FeedbackRelease);
     }
 
     RtlZeroMemory(hidPacketBuffer, sizeof(hidPacketBuffer));
     pHidPacket = (PHID_XFER_PACKET) &hidPacketBuffer;
 
     if (deviceContext->VendorID == HID_VID_APPLE_USB) {
-        deviceContext->X.snratio = 250;
-        deviceContext->X.min = -3678;
-        deviceContext->X.max = 3934;
-        deviceContext->Y.snratio = 250;
-        deviceContext->Y.min = -2479;
-        deviceContext->Y.max = 2586;
-
         pHidPacket->reportId = 0x02;
         pHidPacket->reportBufferLen = 0x04;
         pHidPacket->reportBuffer = (PUCHAR)pHidPacket + sizeof(HID_XFER_PACKET);
@@ -764,13 +773,6 @@ PtpFilterConfigureMultiTouch(
         pHidPacket->reportBuffer[3] = 0x00;
     }
     else if (deviceContext->VendorID == HID_VID_APPLE_BT) {
-        deviceContext->X.snratio = 250;
-        deviceContext->X.min = -3678;
-        deviceContext->X.max = 3934;
-        deviceContext->Y.snratio = 250;
-        deviceContext->Y.min = -2479;
-        deviceContext->Y.max = 2586;
-
         pHidPacket->reportId = 0xF1;
         pHidPacket->reportBufferLen = 0x03;
         pHidPacket->reportBuffer = (PUCHAR)pHidPacket + sizeof(HID_XFER_PACKET);
@@ -821,13 +823,24 @@ PtpFilterConfigureMultiTouch(
     pConfigIrp->UserBuffer = pHidPacket;
 
     WDF_REQUEST_SEND_OPTIONS_INIT(&configRequestSendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS);
+    WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&configRequestSendOptions, WDF_REL_TIMEOUT_IN_SEC(PTP_FEATURE_REPORT_TIMEOUT_SEC));
     if (WdfRequestSend(configRequest, deviceContext->HidIoTarget, &configRequestSendOptions) == FALSE) {
         status = WdfRequestGetStatus(configRequest);
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestSend failed, Status = %!STATUS!", status);
         goto cleanup;
-    } else {
-        TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Changed trackpad status to multitouch mode");
-        status = STATUS_SUCCESS;
+    }
+
+    status = WdfRequestGetStatus(configRequest);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Multitouch mode request failed, Status = %!STATUS!", status);
+        goto cleanup;
+    }
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Changed trackpad status to multitouch mode");
+
+    // Haptics after the mode switch, so a slow or failed haptic report cannot hold up
+    // multitouch. Not fatal. driverContext is only set for Bluetooth.
+    if (driverContext != NULL) {
+        PtpFilterSetHapticFeedback(Device, driverContext->FeedbackClick, driverContext->FeedbackRelease);
     }
 
 cleanup:
@@ -851,11 +864,32 @@ PtpFilterRecoveryTimerCallback(
     device = WdfTimerGetParentObject(Timer);
     deviceContext = PtpFilterGetContext(device);
 
-    // We will try to reinitialize the device
-    status = PtpFilterSelfManagedIoRestart(device);
-    if (NT_SUCCESS(status)) {
-        // If succeeded, bring the transport reads back up to one per queued HID read.
-        // Otherwise the restart has re-armed this timer and we retry in a few seconds.
-        PtpFilterInputReplenishTransportRequests(device);
+    if (!deviceContext->IsHidIoDetourCompleted) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! HID detour not completed, not configuring");
+        return;
     }
+
+    // A passive-level timer callback runs on a system work item, so a timer re-armed by input
+    // while this callback waits on the pad starts a second callback. Configure once at a time.
+    if (InterlockedCompareExchange(&deviceContext->ConfigurationInProgress, 1, 0) != 0) {
+        TraceEvents(TRACE_LEVEL_WARNING, TRACE_DEVICE, "%!FUNC! Configuration already in progress");
+        return;
+    }
+
+    // Configure here, off the PnP and power paths: a pad that is slow to acknowledge, or
+    // never does, then holds up only this callback.
+    status = PtpFilterConfigureMultiTouch(device);
+    if (NT_SUCCESS(status)) {
+        KeQueryPerformanceCounter(&deviceContext->LastReportTime);
+        deviceContext->DeviceConfigured = TRUE;
+    }
+    else {
+        // Retry after 2 seconds. Reads keep flowing if they were already allowed.
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! PtpFilterConfigureMultiTouch failed, Status = %!STATUS!", status);
+        WdfTimerStart(deviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(2));
+    }
+    InterlockedExchange(&deviceContext->ConfigurationInProgress, 0);
+
+    // Bring the transport reads back up to one per queued HID read (a no-op while not configured).
+    PtpFilterInputReplenishTransportRequests(device);
 }
