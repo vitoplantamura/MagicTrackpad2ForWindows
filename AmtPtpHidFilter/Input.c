@@ -215,17 +215,20 @@ AmtPtpMt2ContactBox(
 	*Width = (USHORT)(w ? w : 1);        // never zero while touching (spec)
 	*Height = (USHORT)(h ? h : 1);
 }
+// Request: one already taken from HidReadQueue to complete with this frame, or NULL to take
+// the next one. A request passed in and not used goes back to the queue.
 static
 VOID
 PtpFilterInputParseMT2Report(
 	_In_ PUCHAR Buffer,
 	_In_ SIZE_T BufferLength,
-	_In_ PDEVICE_CONTEXT DeviceContext
+	_In_ PDEVICE_CONTEXT DeviceContext,
+	_In_opt_ WDFREQUEST Request
 )
 {
 	NTSTATUS status;
 
-	WDFREQUEST ptpRequest;
+	WDFREQUEST ptpRequest = Request;
 	WDFMEMORY  ptpRequestMemory;
 	PTP_REPORT ptpOutputReport;
 	PDRIVER_CONTEXT driverContext;
@@ -241,6 +244,9 @@ PtpFilterInputParseMT2Report(
 	if (driver == NULL)
 	{
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INPUT, "%!FUNC! driver == NULL");
+		if (Request != NULL) {
+			WdfRequestRequeue(Request);
+		}
 		return;
 	}
 	driverContext = PtpFilterDriverGetContext(driver);
@@ -253,15 +259,20 @@ PtpFilterInputParseMT2Report(
 	{
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INPUT, "%!FUNC! Malformed input received. Length = %llu. Attempt to reconfigure the device.", BufferLength);
 		WdfTimerStart(DeviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(3));
+		if (Request != NULL) {
+			WdfRequestRequeue(Request);
+		}
 		return;
 	}
 
 	// Retrieve PTP output 
-	status = WdfIoQueueRetrieveNextRequest(DeviceContext->HidReadQueue, &ptpRequest);
-	if (!NT_SUCCESS(status))
-	{
-		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INPUT, "%!FUNC! WdfIoQueueRetrieveNextRequest failed with %!STATUS!", status);
-		return;
+	if (ptpRequest == NULL) {
+		status = WdfIoQueueRetrieveNextRequest(DeviceContext->HidReadQueue, &ptpRequest);
+		if (!NT_SUCCESS(status))
+		{
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_INPUT, "%!FUNC! WdfIoQueueRetrieveNextRequest failed with %!STATUS!", status);
+			return;
+		}
 	}
 
 	timestamp = (mt_report->TimestampHigh << 5) | mt_report->TimestampLow;
@@ -442,6 +453,69 @@ PtpFilterInputParseMT2Report(
 	WdfRequestComplete(ptpRequest, status);
 }
 
+// The size check PtpFilterInputParseMT2Report makes, plus the report ID: four bytes of
+// header, then nine per finger.
+static
+BOOLEAN
+PtpFilterInputIsMT2Report(
+	_In_ PUCHAR Buffer,
+	_In_ SIZE_T BufferLength
+)
+{
+	return BufferLength >= sizeof(TRACKPAD_REPORT_TYPE5) && Buffer[0] == 0x31 &&
+		(BufferLength - sizeof(TRACKPAD_REPORT_TYPE5)) % sizeof(TRACKPAD_FINGER_TYPE5) == 0;
+}
+
+// Two MT2 reports in one packet: 0xF7, the first one's length, the first, then the second,
+// split as Linux's hid-magicmouse does for the first Magic Trackpad. Dropping the packet loses
+// two frames in a row, a hitch in the pointer. Each half completes a queued read of its own
+// (HIDCLASS normally keeps two pending). With only one queued, the newer half gets it, and
+// with none both are dropped, as any frame would be. Returns FALSE, having parsed nothing,
+// unless the packet holds two whole MT2 reports.
+//
+// Both reads are taken from the queue before either is completed. Completing one lets HIDCLASS
+// send its next read straight back; with the other read still queued, that would leave the
+// queue a request ahead of the transport reads, so a transport read would go out, and if it
+// completed at once it could deliver a newer frame ahead of the second half.
+static
+BOOLEAN
+PtpFilterInputParseDoubleReport(
+	_In_ PUCHAR Buffer,
+	_In_ SIZE_T BufferLength,
+	_In_ PDEVICE_CONTEXT DeviceContext
+)
+{
+	SIZE_T firstLength, secondLength;
+	WDFREQUEST requests[2];
+	ULONG taken = 0;
+
+	if (BufferLength < 2) {
+		return FALSE;
+	}
+	firstLength = Buffer[1];
+	if (BufferLength - 2 <= firstLength) {
+		return FALSE;
+	}
+	secondLength = BufferLength - 2 - firstLength;
+	if (!PtpFilterInputIsMT2Report(Buffer + 2, firstLength) ||
+		!PtpFilterInputIsMT2Report(Buffer + 2 + firstLength, secondLength)) {
+		return FALSE;
+	}
+
+	while (taken < 2 && NT_SUCCESS(WdfIoQueueRetrieveNextRequest(DeviceContext->HidReadQueue, &requests[taken]))) {
+		taken++;
+	}
+	if (taken == 0) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_INPUT, "%!FUNC! No queued read for either half of a two-in-one packet");
+		return TRUE;
+	}
+	if (taken == 2) {
+		PtpFilterInputParseMT2Report(Buffer + 2, firstLength, DeviceContext, requests[0]);
+	}
+	PtpFilterInputParseMT2Report(Buffer + 2 + firstLength, secondLength, DeviceContext, requests[taken - 1]);
+	return TRUE;
+}
+
 static
 VOID
 PtpFilterInputParseReport(
@@ -470,10 +544,18 @@ PtpFilterInputParseReport(
 		break;
 
 	case 0x31: // MT2 report
-		PtpFilterInputParseMT2Report(Buffer, BufferLength, DeviceContext);
+		PtpFilterInputParseMT2Report(Buffer, BufferLength, DeviceContext, NULL);
 		break;
 
 	case 0xF7: // Two packets in one (0xF7, pkt 1 len, <pkt 1>, <pkt 2>)
+		if (PtpFilterInputParseDoubleReport(Buffer, BufferLength, DeviceContext)) {
+			break;
+		}
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INPUT,
+			"%!FUNC! Malformed two-in-one packet. Length = %llu", BufferLength);
+		WdfWorkItemEnqueue(DeviceContext->HidTransportRecoveryWorkItem);
+		break;
+
 	case 0xFC: // Part one of large packet
 	case 0xFE: // Part two of large packet
 	case 0x90: // Battery status
