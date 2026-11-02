@@ -59,7 +59,7 @@ AmtPtpReadBatteryLevel(
 
 	*BatteryLevel = 0;
 
-	if (!AmtPtpIsMagicTrackpad2(DeviceContext)) {
+	if (!AmtPtpSupportsBatteryReporting(DeviceContext)) {
 		TraceEvents(
 			TRACE_LEVEL_INFORMATION,
 			TRACE_DEVICE,

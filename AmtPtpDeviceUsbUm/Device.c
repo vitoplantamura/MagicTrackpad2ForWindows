@@ -882,7 +882,7 @@ AmtPtpEvtDeviceD0Entry(
 	isTargetStarted = TRUE;
 
 	// Older MacBook trackpads have no battery and must not receive this request.
-	if (AmtPtpIsMagicTrackpad2(pDeviceContext) && pDeviceContext->BatteryTimer != NULL) {
+	if (AmtPtpSupportsBatteryReporting(pDeviceContext) && pDeviceContext->BatteryTimer != NULL) {
 		InterlockedExchange(&pDeviceContext->BatteryPolling, 1);
 		WdfTimerStart(pDeviceContext->BatteryTimer, WDF_REL_TIMEOUT_IN_SEC(1));
 	}
