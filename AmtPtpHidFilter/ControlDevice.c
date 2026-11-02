@@ -1,6 +1,7 @@
 // ControlDevice.c: control device routines
 
 #include <Driver.h>
+#include "../shared/BatteryProperties.h"
 #include "ControlDevice.tmh"
 
 // Minimum time between two actuations, in 100 ns units (20 ms, as LinuxMagicForce uses).
@@ -96,13 +97,14 @@ PtpFilterEvtIoDeviceControl(
 			status = STATUS_INVALID_DEVICE_STATE;
 		} else {
 			BYTE mt2Battery[64] = { 0 };
-			status = PtpFilterGetHidInputReport(driverContext->CDFirstDevice, 0x90, mt2Battery, sizeof(mt2Battery));
+			ULONG batteryBytes;
+			status = PtpFilterGetHidInputReport(driverContext->CDFirstDevice, 0x90, mt2Battery, sizeof(mt2Battery), &batteryBytes);
 			if (!NT_SUCCESS(status)) {
 				TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! PtpFilterGetHidInputReport failed: %!STATUS!", status);
 			}
-			else if (mt2Battery[0] != 0x90) {
-				TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! mt2Battery[0] != 0x90");
-				status = STATUS_INVALID_DEVICE_STATE;
+			else if (!AmtIsValidBatteryReport(mt2Battery, batteryBytes)) {
+				TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Invalid battery report");
+				status = STATUS_DEVICE_DATA_ERROR;
 			}
 			else if (OutputBufferLength < sizeof(ULONG)) {
 				TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! OutputBufferLength < sizeof(ULONG)");

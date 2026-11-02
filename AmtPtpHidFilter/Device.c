@@ -1,6 +1,7 @@
 // Device.c: Device-specific D0<->D3 handler and other misc procedures
 
 #include <Driver.h>
+#include "../shared/BatteryProperties.h"
 #include "Device.tmh"
 
 #ifdef ALLOC_PRAGMA
@@ -54,6 +55,7 @@ PtpFilterCreateDevice(
     pnpPowerCallbacks.EvtDeviceD0Exit = PtpFilterDeviceD0Exit;
     pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = PtpFilterSelfManagedIoInit;
     pnpPowerCallbacks.EvtDeviceSelfManagedIoRestart = PtpFilterSelfManagedIoRestart;
+    pnpPowerCallbacks.EvtDeviceSelfManagedIoSuspend = PtpFilterSelfManagedIoSuspend;
     pnpPowerCallbacks.EvtDeviceSelfManagedIoCleanup = PtpFilterSelfManagedIoCleanup;
     WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
 
@@ -73,6 +75,7 @@ PtpFilterCreateDevice(
     // Initialize context and interface
     deviceContext = PtpFilterGetContext(device);
     deviceContext->Device = device;
+    deviceContext->LastPublishedBattery = -1;
     deviceContext->WdmDeviceObject = WdfDeviceWdmGetDeviceObject(device);
     if (deviceContext->WdmDeviceObject == NULL) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfDeviceWdmGetDeviceObject failed");
@@ -113,6 +116,19 @@ PtpFilterCreateDevice(
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfTimerCreate failed: %!STATUS!", status);
         goto exit;
+    }
+
+    // A one-shot passive timer may wait for a battery read and re-arm itself.
+    // Do not serialize it with callbacks that stop it and wait for completion.
+    WDF_TIMER_CONFIG_INIT(&timerConfig, PtpFilterBatteryTimer);
+    timerConfig.AutomaticSerialization = FALSE;
+    WDF_OBJECT_ATTRIBUTES_INIT(&deviceAttributes);
+    deviceAttributes.ParentObject = device;
+    deviceAttributes.ExecutionLevel = WdfExecutionLevelPassive;
+    status = WdfTimerCreate(&timerConfig, &deviceAttributes, &deviceContext->BatteryTimer);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_WARNING, TRACE_DEVICE, "Battery timer unavailable: %!STATUS!", status);
+        // Battery reporting is optional; touch input must still work.
     }
 
     // Initialize HID recovery workitem
@@ -309,6 +325,11 @@ PtpFilterSelfManagedIoInit(
     // Set device state
     deviceContext->DeviceConfigured = TRUE;
 
+    if (deviceContext->BatteryTimer != NULL) {
+        InterlockedExchange(&deviceContext->BatteryPolling, 1);
+        WdfTimerStart(deviceContext->BatteryTimer, WDF_REL_TIMEOUT_IN_SEC(3));
+    }
+
 exit:
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit, Status = %!STATUS!", status);
     return status;
@@ -322,8 +343,27 @@ PtpFilterSelfManagedIoCleanup(
     PAGED_CODE();
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
 
+    // Also handles a failed start before SelfManagedIoSuspend was called.
+    (void)PtpFilterSelfManagedIoSuspend(Device);
+
     // Before the device and its I/O target are deleted.
     PtpFilterHapticTrackpadStopped(Device);
+}
+
+NTSTATUS
+PtpFilterSelfManagedIoSuspend(
+    _In_ WDFDEVICE Device
+)
+{
+    PDEVICE_CONTEXT deviceContext = PtpFilterGetContext(Device);
+
+    PAGED_CODE();
+    InterlockedExchange(&deviceContext->BatteryPolling, 0);
+    if (deviceContext->BatteryTimer != NULL) {
+        WdfTimerStop(deviceContext->BatteryTimer, TRUE);
+    }
+    deviceContext->LastPublishedBattery = -1;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -356,6 +396,11 @@ PtpFilterSelfManagedIoRestart(
     // Set device state
     deviceContext->DeviceConfigured = TRUE;
 
+    if (deviceContext->BatteryTimer != NULL) {
+        InterlockedExchange(&deviceContext->BatteryPolling, 1);
+        WdfTimerStart(deviceContext->BatteryTimer, WDF_REL_TIMEOUT_IN_SEC(3));
+    }
+
 exit:
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit, Status = %!STATUS!", status);
     return status;
@@ -366,7 +411,8 @@ PtpFilterGetHidInputReport(
     _In_ WDFDEVICE Device,
     _In_ UCHAR ReportId,
     _Out_ PUCHAR pReportBuffer,
-    _In_ ULONG ReportBufferSize
+    _In_ ULONG ReportBufferSize,
+    _Out_ PULONG BytesReturned
     )
 {
     NTSTATUS status = STATUS_SUCCESS;
@@ -377,14 +423,18 @@ PtpFilterGetHidInputReport(
     PUCHAR pAllocatedBuffer = NULL;
 	WDF_OBJECT_ATTRIBUTES attributes;
 	PMDL pMDL = NULL;
+    PIRP irp = NULL;
+    ULONG_PTR bytesReturned;
 
     PAGED_CODE();
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry: ReportId=0x%02x, BufferSize=%lu", ReportId, ReportBufferSize);
 
-    if (Device == NULL || pReportBuffer == NULL || ReportBufferSize <= 1) {
+    if (Device == NULL || pReportBuffer == NULL || ReportBufferSize <= 1 || BytesReturned == NULL) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Invalid parameter");
         return STATUS_INVALID_PARAMETER;
     }
+
+    *BytesReturned = 0;
 
     deviceContext = PtpFilterGetContext(Device);
 
@@ -416,7 +466,7 @@ PtpFilterGetHidInputReport(
     RtlZeroMemory(pHidPacket, sizeof(HID_XFER_PACKET) + ReportBufferSize);
     pHidPacket->reportId = ReportId;
     pHidPacket->reportBuffer = pOutReportBuffer;
-    pHidPacket->reportBufferLen = ReportBufferSize - 1;
+    pHidPacket->reportBufferLen = ReportBufferSize;
 	pOutReportBuffer[0] = ReportId;
 
     // Format request
@@ -433,7 +483,7 @@ PtpFilterGetHidInputReport(
         goto Exit;
     }
 
-    PIRP irp = WdfRequestWdmGetIrp(request);
+    irp = WdfRequestWdmGetIrp(request);
     if (irp == NULL) {
         status = STATUS_UNSUCCESSFUL;
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestWdmGetIrp failed");
@@ -441,7 +491,7 @@ PtpFilterGetHidInputReport(
     }
     irp->UserBuffer = pHidPacket;
 	
-	pMDL = IoAllocateMdl((PVOID)pOutReportBuffer, ReportBufferSize - 1, FALSE, FALSE, NULL);
+	pMDL = IoAllocateMdl((PVOID)pOutReportBuffer, ReportBufferSize, FALSE, FALSE, NULL);
     if (pMDL == NULL) {
         status = STATUS_UNSUCCESSFUL;
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! IoAllocateMdl failed");
@@ -453,6 +503,7 @@ PtpFilterGetHidInputReport(
     // Send synchronously
     WDF_REQUEST_SEND_OPTIONS sendOptions;
     WDF_REQUEST_SEND_OPTIONS_INIT(&sendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS);
+    WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&sendOptions, WDF_REL_TIMEOUT_IN_SEC(AMT_BATTERY_REQUEST_TIMEOUT_SEC));
 
     if (!WdfRequestSend(request, deviceContext->HidIoTarget, &sendOptions)) {
         status = WdfRequestGetStatus(request);
@@ -460,19 +511,28 @@ PtpFilterGetHidInputReport(
         goto Exit;
     }
 
-    // Copy response back to caller
-    if (pHidPacket->reportBufferLen > ReportBufferSize) {
+    status = WdfRequestGetStatus(request);
+    if (!NT_SUCCESS(status)) {
+        goto Exit;
+    }
+
+    // reportBufferLen is the capacity supplied to the minidriver, not the
+    // number of bytes it returned. Never interpret a short report as 0%.
+    bytesReturned = WdfRequestGetInformation(request);
+    if (bytesReturned > ReportBufferSize) {
         status = STATUS_BUFFER_OVERFLOW;
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Response too large");
         goto Exit;
     }
 
-    RtlCopyMemory(pReportBuffer, pHidPacket->reportBuffer, pHidPacket->reportBufferLen);
+    RtlCopyMemory(pReportBuffer, pHidPacket->reportBuffer, bytesReturned);
+    *BytesReturned = (ULONG)bytesReturned;
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Input report read successfully, size=%lu", pHidPacket->reportBufferLen);
+    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Input report read successfully, size=%lu", *BytesReturned);
 
 Exit:
 	if (pMDL != NULL) {
+        irp->MdlAddress = NULL;
 		IoFreeMdl(pMDL);
 	}
     if (request != NULL) {
@@ -892,4 +952,34 @@ PtpFilterRecoveryTimerCallback(
 
     // Bring the transport reads back up to one per queued HID read (a no-op while not configured).
     PtpFilterInputReplenishTransportRequests(device);
+}
+
+VOID
+PtpFilterBatteryTimer(WDFTIMER Timer)
+{
+    WDFDEVICE device = WdfTimerGetParentObject(Timer);
+    PDEVICE_CONTEXT deviceContext = PtpFilterGetContext(device);
+    UCHAR report[64] = { 0 };
+    ULONG bytesReturned;
+    NTSTATUS status;
+
+    if (InterlockedCompareExchange(&deviceContext->BatteryPolling, 0, 0) == 0) {
+        return;
+    }
+
+    status = PtpFilterGetHidInputReport(device, 0x90, report, sizeof(report), &bytesReturned);
+    if (NT_SUCCESS(status) && AmtIsValidBatteryReport(report, bytesReturned) &&
+        deviceContext->LastPublishedBattery != report[2]) {
+        status = AmtPublishBattery(device, report[2]);
+        if (NT_SUCCESS(status)) {
+            deviceContext->LastPublishedBattery = report[2];
+        }
+        else {
+            TraceEvents(TRACE_LEVEL_WARNING, TRACE_DEVICE, "Battery property update failed: %!STATUS!", status);
+        }
+    }
+
+    if (InterlockedCompareExchange(&deviceContext->BatteryPolling, 0, 0) != 0) {
+        WdfTimerStart(Timer, WDF_REL_TIMEOUT_IN_SEC(AMT_BATTERY_POLL_INTERVAL_SEC));
+    }
 }

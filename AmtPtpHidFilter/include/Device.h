@@ -41,6 +41,10 @@ typedef struct _DEVICE_CONTEXT
     WDFDEVICE       Device;
     WDFQUEUE        HidReadQueue;
 
+    WDFTIMER        BatteryTimer;
+    volatile LONG   BatteryPolling;
+    LONG            LastPublishedBattery; // -1 until both device properties are written
+
     // Device identification
     USHORT VendorID;
     USHORT ProductID;
@@ -104,7 +108,9 @@ EVT_WDF_DEVICE_D0_ENTRY PtpFilterDeviceD0Entry;
 EVT_WDF_DEVICE_D0_EXIT PtpFilterDeviceD0Exit;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_INIT PtpFilterSelfManagedIoInit;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_RESTART PtpFilterSelfManagedIoRestart;
+EVT_WDF_DEVICE_SELF_MANAGED_IO_SUSPEND PtpFilterSelfManagedIoSuspend;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_CLEANUP PtpFilterSelfManagedIoCleanup;
+EVT_WDF_TIMER PtpFilterBatteryTimer;
 
 // Device Management routines
 NTSTATUS
@@ -151,7 +157,8 @@ PtpFilterGetHidInputReport(
     _In_ WDFDEVICE Device,
     _In_ UCHAR ReportId,
     _Out_ PUCHAR pReportBuffer,
-    _In_ ULONG ReportBufferSize
+    _In_ ULONG ReportBufferSize,
+    _Out_ PULONG BytesReturned
 );
 
 EXTERN_C_END

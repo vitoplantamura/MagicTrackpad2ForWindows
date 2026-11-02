@@ -1,6 +1,7 @@
 // Device.c: Device handling events for driver.
 
 #include <driver.h>
+#include "../shared/BatteryProperties.h"
 #include "device.tmh"
 
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -34,6 +35,7 @@ AmtPtpCreateDevice(
 	PDEVICE_CONTEXT						deviceContext;
 	WDFDEVICE							device;
 	NTSTATUS							status;
+	WDF_TIMER_CONFIG                    timerConfig;
 
 	UNREFERENCED_PARAMETER(Driver);
 	PAGED_CODE();
@@ -78,6 +80,19 @@ AmtPtpCreateDevice(
 	// run under framework verifier mode.
 	//
 	deviceContext = DeviceGetContext(device);
+	deviceContext->LastPublishedBattery = -1;
+
+	// Poll at passive level without holding a device callback serialization lock.
+	WDF_TIMER_CONFIG_INIT(&timerConfig, AmtPtpBatteryTimer);
+	timerConfig.AutomaticSerialization = FALSE;
+	WDF_OBJECT_ATTRIBUTES_INIT(&deviceAttributes);
+	deviceAttributes.ParentObject = device;
+	deviceAttributes.ExecutionLevel = WdfExecutionLevelPassive;
+	status = WdfTimerCreate(&timerConfig, &deviceAttributes, &deviceContext->BatteryTimer);
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_WARNING, TRACE_DEVICE, "Battery timer unavailable: %!STATUS!", status);
+		// Battery reporting is optional; touch input must still work.
+	}
 
 	//
 	// Tell the framework to set the SurpriseRemovalOK in the DeviceCaps so
@@ -115,6 +130,34 @@ AmtPtpCreateDevice(
 	);
 
 	return status;
+}
+
+VOID
+AmtPtpBatteryTimer(WDFTIMER Timer)
+{
+	WDFDEVICE device = WdfTimerGetParentObject(Timer);
+	PDEVICE_CONTEXT deviceContext = DeviceGetContext(device);
+	UCHAR level;
+	NTSTATUS status;
+
+	if (InterlockedCompareExchange(&deviceContext->BatteryPolling, 0, 0) == 0) {
+		return;
+	}
+
+	status = AmtPtpReadBatteryLevel(deviceContext, &level);
+	if (NT_SUCCESS(status) && deviceContext->LastPublishedBattery != level) {
+		status = AmtPublishBattery(device, level);
+		if (NT_SUCCESS(status)) {
+			deviceContext->LastPublishedBattery = level;
+		}
+		else {
+			TraceEvents(TRACE_LEVEL_WARNING, TRACE_DEVICE, "Battery property update failed: %!STATUS!", status);
+		}
+	}
+
+	if (InterlockedCompareExchange(&deviceContext->BatteryPolling, 0, 0) != 0) {
+		WdfTimerStart(Timer, WDF_REL_TIMEOUT_IN_SEC(AMT_BATTERY_POLL_INTERVAL_SEC));
+	}
 }
 
 NTSTATUS
@@ -838,6 +881,12 @@ AmtPtpEvtDeviceD0Entry(
 
 	isTargetStarted = TRUE;
 
+	// Older MacBook trackpads have no battery and must not receive this request.
+	if (AmtPtpIsMagicTrackpad2(pDeviceContext) && pDeviceContext->BatteryTimer != NULL) {
+		InterlockedExchange(&pDeviceContext->BatteryPolling, 1);
+		WdfTimerStart(pDeviceContext->BatteryTimer, WDF_REL_TIMEOUT_IN_SEC(1));
+	}
+
 End:
 
 	if (!NT_SUCCESS(status)) {
@@ -892,6 +941,12 @@ AmtPtpEvtDeviceD0Exit(
 	//
 	// Stop the control panel pipe server.
 	//
+	InterlockedExchange(&pDeviceContext->BatteryPolling, 0);
+	if (pDeviceContext->BatteryTimer != NULL) {
+		WdfTimerStop(pDeviceContext->BatteryTimer, TRUE);
+	}
+	pDeviceContext->LastPublishedBattery = -1;
+
 	AmtPtpControlPanelPipeStop(pDeviceContext);
 
 	// Stop IO Pipe.

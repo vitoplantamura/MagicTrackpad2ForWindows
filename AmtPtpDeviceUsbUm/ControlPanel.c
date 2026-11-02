@@ -2,6 +2,7 @@
 
 #include <driver.h>
 #include <sddl.h>
+#include "../shared/BatteryProperties.h"
 #include "ControlPanel.tmh"
 
 //
@@ -50,6 +51,7 @@ AmtPtpReadBatteryLevel(
 	NTSTATUS                        status;
 	WDF_USB_CONTROL_SETUP_PACKET    setupPacket;
 	WDF_MEMORY_DESCRIPTOR           memoryDescriptor;
+	WDF_REQUEST_SEND_OPTIONS        sendOptions;
 	ULONG                           cbTransferred = 0;
 	UCHAR                           buffer[128];
 
@@ -92,10 +94,12 @@ AmtPtpReadBatteryLevel(
 	);
 	setupPacket.Packet.bm.Request.Type = BmRequestClass;
 
+	WDF_REQUEST_SEND_OPTIONS_INIT(&sendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS);
+	WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&sendOptions, WDF_REL_TIMEOUT_IN_SEC(AMT_BATTERY_REQUEST_TIMEOUT_SEC));
 	status = WdfUsbTargetDeviceSendControlTransferSynchronously(
 		DeviceContext->UsbDevice,
 		WDF_NO_HANDLE,
-		NULL,
+		&sendOptions,
 		&setupPacket,
 		&memoryDescriptor,
 		&cbTransferred
@@ -112,11 +116,11 @@ AmtPtpReadBatteryLevel(
 		return status;
 	}
 
-	if (cbTransferred < 3) {
+	if (!AmtIsValidBatteryReport(buffer, cbTransferred)) {
 		TraceEvents(
 			TRACE_LEVEL_WARNING,
 			TRACE_DEVICE,
-			"%!FUNC! battery control transfer returned less than 3 bytes"
+			"%!FUNC! Invalid battery report"
 		);
 		return STATUS_DEVICE_DATA_ERROR;
 	}

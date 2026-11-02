@@ -473,10 +473,12 @@ PtpFilterInputParseReport(
 		PtpFilterInputParseMT2Report(Buffer, BufferLength, DeviceContext);
 		break;
 
+	case 0x90: // Battery telemetry does not require multitouch recovery.
+		break;
+
 	case 0xF7: // Two packets in one (0xF7, pkt 1 len, <pkt 1>, <pkt 2>)
 	case 0xFC: // Part one of large packet
 	case 0xFE: // Part two of large packet
-	case 0x90: // Battery status
 	default:
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INPUT,
 			"%!FUNC! Unhandled packet (Report ID: 0x%x)", reportId);
