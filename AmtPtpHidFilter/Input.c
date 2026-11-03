@@ -529,7 +529,6 @@ PtpFilterInputRequestCompletionCallback(
 		goto cleanup;
 	}
 
-	TraceEvents(TRACE_LEVEL_VERBOSE, TRACE_INPUT, "Transport input id=%02x bytes=%Iu", responseBuffer[0], responseLength);
 	PtpFilterInputParseReport(responseBuffer, responseLength, deviceContext);
 
 cleanup:

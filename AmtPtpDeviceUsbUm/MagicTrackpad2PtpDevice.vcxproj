@@ -56,7 +56,6 @@
     <ClInclude Include="include\StaticHidRegistry.h" />
     <ClInclude Include="include\Trace.h" />
     <ClInclude Include="include\ControlPanel.h" />
-    <ClInclude Include="..\shared\BatteryProperties.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

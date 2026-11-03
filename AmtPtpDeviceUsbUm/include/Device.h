@@ -70,17 +70,12 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)
 #define POOL_TAG_PTP_CONTROL 'PTPC'
 
 //
-// The standalone Magic Trackpad models using TYPE5 (Lightning 0x0265 and
-// USB-C 0x0324) have haptic feedback and a battery. Older MacBook trackpads
-// must not receive these vendor requests. DeviceInfo is always set once
-// EvtDevicePrepareHardware has succeeded, so no NULL check is needed here.
+// Only the Magic Trackpad 2 family (TYPE5: PIDs 0x0265 and 0x0324) has haptic
+// feedback and a battery. The older MacBook trackpads must not receive those
+// vendor requests. DeviceInfo is always set once EvtDevicePrepareHardware has
+// succeeded, so no NULL check is needed here.
 //
 #define AmtPtpIsMagicTrackpad2(DeviceContext) ((DeviceContext)->DeviceInfo->tp_type == TYPE5)
-
-// Battery report 0x90 is supported by the TYPE5 protocol used by both the
-// Lightning (0x0265) and USB-C (0x0324) models. This is not a generation check.
-// Other supported USB protocols belong to built-in MacBook trackpads.
-#define AmtPtpSupportsBatteryReporting(DeviceContext) ((DeviceContext)->DeviceInfo->tp_type == TYPE5)
 
 //
 // Function to initialize the device's queues and callbacks
