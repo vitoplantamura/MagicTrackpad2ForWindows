@@ -34,16 +34,28 @@ typedef struct _PTP_REPORT_AUX {
 	UCHAR		TipSwitch;
 } PTP_REPORT_AUX, * PPTP_REPORT_AUX;
 
+// Only one battery sample (including its property write) can be in flight.
+typedef struct _BATTERY_CONTEXT {
+    WDFIOTARGET Target;
+    WDFTIMER Timer;
+    volatile LONG Epoch; // odd while running, even while stopped
+    volatile LONG Busy;
+    LONG SampleEpoch;
+    volatile LONG64 Cached;
+    LONG64 Published;
+    HID_XFER_PACKET Packet;
+    UCHAR Report[64];
+    PIO_WORKITEM Work;
+    PDEVICE_OBJECT Pdo;
+} BATTERY_CONTEXT;
+
 // Device Context
 typedef struct _DEVICE_CONTEXT
 {
     PDEVICE_OBJECT  WdmDeviceObject;
     WDFDEVICE       Device;
     WDFQUEUE        HidReadQueue;
-
-    WDFTIMER        BatteryTimer;
-    volatile LONG   BatteryPolling;
-    LONG            LastPublishedBattery; // -1 until both device properties are written
+    BATTERY_CONTEXT Battery;
 
     // Device identification
     USHORT VendorID;
@@ -108,9 +120,7 @@ EVT_WDF_DEVICE_D0_ENTRY PtpFilterDeviceD0Entry;
 EVT_WDF_DEVICE_D0_EXIT PtpFilterDeviceD0Exit;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_INIT PtpFilterSelfManagedIoInit;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_RESTART PtpFilterSelfManagedIoRestart;
-EVT_WDF_DEVICE_SELF_MANAGED_IO_SUSPEND PtpFilterSelfManagedIoSuspend;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_CLEANUP PtpFilterSelfManagedIoCleanup;
-EVT_WDF_TIMER PtpFilterBatteryTimer;
 
 // Device Management routines
 NTSTATUS
@@ -152,13 +162,8 @@ PtpFilterSendHidOutputReport(
     _In_ ULONG ReportDataSize
 );
 
-NTSTATUS
-PtpFilterGetHidInputReport(
-    _In_ WDFDEVICE Device,
-    _In_ UCHAR ReportId,
-    _Out_ PUCHAR pReportBuffer,
-    _In_ ULONG ReportBufferSize,
-    _Out_ PULONG BytesReturned
-);
+VOID PtpBatteryInitialize(WDFDEVICE Device);
+VOID PtpBatteryStart(WDFDEVICE Device);
+EVT_WDF_DEVICE_SELF_MANAGED_IO_SUSPEND PtpBatterySuspend;
 
 EXTERN_C_END

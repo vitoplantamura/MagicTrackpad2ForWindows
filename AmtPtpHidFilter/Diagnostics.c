@@ -121,6 +121,7 @@ PtpFilterDiagnosticsRequestCompletionRoutine(
 
 	requestContext = (PWORKER_REQUEST_CONTEXT)Context;
 	deviceContext = requestContext->DeviceContext;
+	WDFMEMORY finishedMemory = requestContext->RequestMemory;
 
 	// Decode request
 	responseLength = (LONG) WdfRequestGetInformation(Request);
@@ -128,14 +129,13 @@ PtpFilterDiagnosticsRequestCompletionRoutine(
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INPUT, "Request received with size %d", responseLength);
 	}
 
-	// Cleanup
 	WdfObjectDelete(Request);
-	if (requestContext->RequestMemory != NULL) {
-		WdfObjectDelete(requestContext->RequestMemory);
+	if (finishedMemory != NULL) {
+		WdfObjectDelete(finishedMemory);
 	}
 
 	// Issue next request
-	PtpFilterDiagnosticsInputIssueRequest(requestContext->DeviceContext->Device);
+	PtpFilterDiagnosticsInputIssueRequest(deviceContext->Device);
 }
 
 PCHAR

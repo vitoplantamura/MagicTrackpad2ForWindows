@@ -473,12 +473,10 @@ PtpFilterInputParseReport(
 		PtpFilterInputParseMT2Report(Buffer, BufferLength, DeviceContext);
 		break;
 
-	case 0x90: // Battery telemetry does not require multitouch recovery.
-		break;
-
 	case 0xF7: // Two packets in one (0xF7, pkt 1 len, <pkt 1>, <pkt 2>)
 	case 0xFC: // Part one of large packet
 	case 0xFE: // Part two of large packet
+	case 0x90: // Battery status
 	default:
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_INPUT,
 			"%!FUNC! Unhandled packet (Report ID: 0x%x)", reportId);
@@ -505,12 +503,17 @@ PtpFilterInputRequestCompletionCallback(
 	
 	requestContext = (PWORKER_REQUEST_CONTEXT)Context;
 	deviceContext = requestContext->DeviceContext;
+	WDFMEMORY finishedMemory = requestContext->RequestMemory;
 
 	// This read is no longer in flight. Decrement first so a replenish triggered from
 	// this routine (recovery work item) sees the right count.
 	InterlockedDecrement(&deviceContext->OutstandingTransportReads);
 
-	responseLength = (size_t)(LONG)WdfRequestGetInformation(Request);
+	responseLength = WdfRequestGetInformation(Request);
+    if (!NT_SUCCESS(Params->IoStatus.Status) || responseLength > REPORT_BUFFER_SIZE) {
+        TraceEvents(TRACE_LEVEL_WARNING, TRACE_INPUT, "Transport read: %!STATUS!, length=%Iu", Params->IoStatus.Status, responseLength);
+        responseLength = 0;
+    }
 	responseBuffer = WdfMemoryGetBuffer(Params->Parameters.Ioctl.Output.Buffer, NULL);
 
 	// Pre-flight check 0: Right now we only have Magic Trackpad 2 (BT and USB)
@@ -526,13 +529,13 @@ PtpFilterInputRequestCompletionCallback(
 		goto cleanup;
 	}
 
+	TraceEvents(TRACE_LEVEL_VERBOSE, TRACE_INPUT, "Transport input id=%02x bytes=%Iu", responseBuffer[0], responseLength);
 	PtpFilterInputParseReport(responseBuffer, responseLength, deviceContext);
 
 cleanup:
-	// Cleanup
 	WdfObjectDelete(Request);
-	if (requestContext->RequestMemory != NULL) {
-		WdfObjectDelete(requestContext->RequestMemory);
+	if (finishedMemory != NULL) {
+		WdfObjectDelete(finishedMemory);
 	}
 
 	// We don't issue new request here (unless it's a spurious request - which is handled earlier) to

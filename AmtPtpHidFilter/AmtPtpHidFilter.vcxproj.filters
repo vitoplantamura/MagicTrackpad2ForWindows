@@ -25,6 +25,9 @@
     <ClCompile Include="Driver.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Battery.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Device.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -89,10 +92,5 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\shared\BatteryProperties.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
 </Project>

@@ -1,7 +1,6 @@
 // ControlDevice.c: control device routines
 
 #include <Driver.h>
-#include "../shared/BatteryProperties.h"
 #include "ControlDevice.tmh"
 
 // Minimum time between two actuations, in 100 ns units (20 ms, as LinuxMagicForce uses).
@@ -91,38 +90,24 @@ PtpFilterEvtIoDeviceControl(
 		}
         break;
 		
-	case IOCTL_PTPFILTER_GET_BATTERY:
-		if (driverContext->CDFirstDevice == NULL) {
-			TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! CDFirstDevice == NULL");
-			status = STATUS_INVALID_DEVICE_STATE;
-		} else {
-			BYTE mt2Battery[64] = { 0 };
-			ULONG batteryBytes;
-			status = PtpFilterGetHidInputReport(driverContext->CDFirstDevice, 0x90, mt2Battery, sizeof(mt2Battery), &batteryBytes);
-			if (!NT_SUCCESS(status)) {
-				TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! PtpFilterGetHidInputReport failed: %!STATUS!", status);
-			}
-			else if (!AmtIsValidBatteryReport(mt2Battery, batteryBytes)) {
-				TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Invalid battery report");
-				status = STATUS_DEVICE_DATA_ERROR;
-			}
-			else if (OutputBufferLength < sizeof(ULONG)) {
-				TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! OutputBufferLength < sizeof(ULONG)");
-				status = STATUS_BUFFER_TOO_SMALL;
-			}
-			else {
-				pOutputBuffer = NULL;
-				status = WdfRequestRetrieveOutputBuffer(Request, sizeof(ULONG), (PVOID*)&pOutputBuffer, NULL);
-				if (!NT_SUCCESS(status)) {
-					TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestRetrieveOutputBuffer failed: %!STATUS!", status);
-				}
-				else {
-					*pOutputBuffer = (ULONG)mt2Battery[2];
-					bytesReturned = sizeof(ULONG);
-				}
-			}
-		}
-		break;
+    case IOCTL_PTPFILTER_GET_BATTERY:
+        WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+        status = STATUS_DEVICE_NOT_CONNECTED;
+        if (driverContext->HapticTrackpad != NULL) {
+            BATTERY_CONTEXT* battery = &PtpFilterGetContext(driverContext->HapticTrackpad)->Battery;
+            LONG64 sample = InterlockedCompareExchange64(&battery->Cached, 0, 0);
+            LONG epoch = battery->Epoch;
+            status = STATUS_DEVICE_NOT_READY;
+            if ((epoch & 1) && (ULONG)(sample >> 8) == (ULONG)epoch) {
+                status = WdfRequestRetrieveOutputBuffer(Request, sizeof(ULONG), (PVOID*)&pOutputBuffer, NULL);
+                if (NT_SUCCESS(status)) {
+                    *pOutputBuffer = (ULONG)(sample & 0xff);
+                    bytesReturned = sizeof(ULONG);
+                }
+            }
+        }
+        WdfWaitLockRelease(driverContext->HapticLock);
+        break;
 
 	case IOCTL_PTPFILTER_ACTUATE:
 		status = PtpFilterControlActuate(driverContext, Request, InputBufferLength);
