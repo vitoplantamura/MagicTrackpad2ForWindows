@@ -16,10 +16,6 @@ typedef struct _DEVICE_CONTEXT
 	WDFUSBINTERFACE             UsbInterface;
 	WDFQUEUE                    InputQueue;
 
-	WDFTIMER                    BatteryTimer;
-	volatile LONG               BatteryPolling;
-	LONG                        LastPublishedBattery; // -1 until both device properties are written
-
 	USB_DEVICE_DESCRIPTOR       DeviceDescriptor;
 
 	const struct BCM5974_CONFIG *DeviceInfo;
@@ -93,7 +89,6 @@ AmtPtpCreateDevice(
 EVT_WDF_DEVICE_PREPARE_HARDWARE AmtPtpEvtDevicePrepareHardware;
 EVT_WDF_DEVICE_D0_ENTRY AmtPtpEvtDeviceD0Entry;
 EVT_WDF_DEVICE_D0_EXIT AmtPtpEvtDeviceD0Exit;
-EVT_WDF_TIMER AmtPtpBatteryTimer;
 
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
