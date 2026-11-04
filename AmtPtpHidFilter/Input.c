@@ -503,12 +503,17 @@ PtpFilterInputRequestCompletionCallback(
 	
 	requestContext = (PWORKER_REQUEST_CONTEXT)Context;
 	deviceContext = requestContext->DeviceContext;
+	WDFMEMORY finishedMemory = requestContext->RequestMemory;
 
 	// This read is no longer in flight. Decrement first so a replenish triggered from
 	// this routine (recovery work item) sees the right count.
 	InterlockedDecrement(&deviceContext->OutstandingTransportReads);
 
-	responseLength = (size_t)(LONG)WdfRequestGetInformation(Request);
+	responseLength = WdfRequestGetInformation(Request);
+    if (!NT_SUCCESS(Params->IoStatus.Status) || responseLength > REPORT_BUFFER_SIZE) {
+        TraceEvents(TRACE_LEVEL_WARNING, TRACE_INPUT, "Transport read: %!STATUS!, length=%Iu", Params->IoStatus.Status, responseLength);
+        responseLength = 0;
+    }
 	responseBuffer = WdfMemoryGetBuffer(Params->Parameters.Ioctl.Output.Buffer, NULL);
 
 	// Pre-flight check 0: Right now we only have Magic Trackpad 2 (BT and USB)
@@ -527,10 +532,9 @@ PtpFilterInputRequestCompletionCallback(
 	PtpFilterInputParseReport(responseBuffer, responseLength, deviceContext);
 
 cleanup:
-	// Cleanup
 	WdfObjectDelete(Request);
-	if (requestContext->RequestMemory != NULL) {
-		WdfObjectDelete(requestContext->RequestMemory);
+	if (finishedMemory != NULL) {
+		WdfObjectDelete(finishedMemory);
 	}
 
 	// We don't issue new request here (unless it's a spurious request - which is handled earlier) to

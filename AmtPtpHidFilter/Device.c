@@ -54,6 +54,7 @@ PtpFilterCreateDevice(
     pnpPowerCallbacks.EvtDeviceD0Exit = PtpFilterDeviceD0Exit;
     pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = PtpFilterSelfManagedIoInit;
     pnpPowerCallbacks.EvtDeviceSelfManagedIoRestart = PtpFilterSelfManagedIoRestart;
+    pnpPowerCallbacks.EvtDeviceSelfManagedIoSuspend = PtpBatterySuspend;
     pnpPowerCallbacks.EvtDeviceSelfManagedIoCleanup = PtpFilterSelfManagedIoCleanup;
     WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
 
@@ -308,6 +309,8 @@ PtpFilterSelfManagedIoInit(
 
     // Set device state
     deviceContext->DeviceConfigured = TRUE;
+    PtpBatteryInitialize(Device);
+    PtpBatteryStart(Device);
 
 exit:
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit, Status = %!STATUS!", status);
@@ -322,6 +325,7 @@ PtpFilterSelfManagedIoCleanup(
     PAGED_CODE();
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry");
 
+    (void)PtpBatterySuspend(Device);
     // Before the device and its I/O target are deleted.
     PtpFilterHapticTrackpadStopped(Device);
 }
@@ -355,131 +359,10 @@ PtpFilterSelfManagedIoRestart(
 
     // Set device state
     deviceContext->DeviceConfigured = TRUE;
+    PtpBatteryStart(Device);
 
 exit:
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit, Status = %!STATUS!", status);
-    return status;
-}
-
-NTSTATUS
-PtpFilterGetHidInputReport(
-    _In_ WDFDEVICE Device,
-    _In_ UCHAR ReportId,
-    _Out_ PUCHAR pReportBuffer,
-    _In_ ULONG ReportBufferSize
-    )
-{
-    NTSTATUS status = STATUS_SUCCESS;
-    PDEVICE_CONTEXT deviceContext = NULL;
-    WDFREQUEST request = NULL;
-    WDFMEMORY memory = NULL;
-    PHID_XFER_PACKET pHidPacket = NULL;
-    PUCHAR pAllocatedBuffer = NULL;
-	WDF_OBJECT_ATTRIBUTES attributes;
-	PMDL pMDL = NULL;
-
-    PAGED_CODE();
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Entry: ReportId=0x%02x, BufferSize=%lu", ReportId, ReportBufferSize);
-
-    if (Device == NULL || pReportBuffer == NULL || ReportBufferSize <= 1) {
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Invalid parameter");
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    deviceContext = PtpFilterGetContext(Device);
-
-    // Allocate request
-    status = WdfRequestCreate(WDF_NO_OBJECT_ATTRIBUTES, deviceContext->HidIoTarget, &request);
-    if (!NT_SUCCESS(status)) {
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestCreate failed: %!STATUS!", status);
-        goto Exit;
-    }
-
-    // Allocate buffer for HID_XFER_PACKET + output report buffer
-    WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-    attributes.ParentObject = request;
-    status = WdfMemoryCreate(&attributes,
-                             NonPagedPoolNx,
-                             0,
-                             sizeof(HID_XFER_PACKET) + ReportBufferSize,
-                             &memory,
-                             (PVOID*)&pAllocatedBuffer);
-    if (!NT_SUCCESS(status)) {
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfMemoryCreate failed: %!STATUS!", status);
-        goto Exit;
-    }
-
-    pHidPacket = (PHID_XFER_PACKET)pAllocatedBuffer;
-    PUCHAR pOutReportBuffer = pAllocatedBuffer + sizeof(HID_XFER_PACKET);
-
-    // Initialize HID_XFER_PACKET for GET
-    RtlZeroMemory(pHidPacket, sizeof(HID_XFER_PACKET) + ReportBufferSize);
-    pHidPacket->reportId = ReportId;
-    pHidPacket->reportBuffer = pOutReportBuffer;
-    pHidPacket->reportBufferLen = ReportBufferSize - 1;
-	pOutReportBuffer[0] = ReportId;
-
-    // Format request
-    status = WdfIoTargetFormatRequestForInternalIoctl(
-        deviceContext->HidIoTarget,
-        request,
-        IOCTL_HID_GET_INPUT_REPORT,
-        NULL,               // No input buffer for GET
-		NULL,
-        memory,             // Output buffer (contains HID_XFER_PACKET + data buffer)
-        NULL);
-    if (!NT_SUCCESS(status)) {
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfIoTargetFormatRequestForInternalIoctl failed: %!STATUS!", status);
-        goto Exit;
-    }
-
-    PIRP irp = WdfRequestWdmGetIrp(request);
-    if (irp == NULL) {
-        status = STATUS_UNSUCCESSFUL;
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestWdmGetIrp failed");
-        goto Exit;
-    }
-    irp->UserBuffer = pHidPacket;
-	
-	pMDL = IoAllocateMdl((PVOID)pOutReportBuffer, ReportBufferSize - 1, FALSE, FALSE, NULL);
-    if (pMDL == NULL) {
-        status = STATUS_UNSUCCESSFUL;
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! IoAllocateMdl failed");
-        goto Exit;
-    }
-	MmBuildMdlForNonPagedPool(pMDL);
-	irp->MdlAddress = pMDL;
-
-    // Send synchronously
-    WDF_REQUEST_SEND_OPTIONS sendOptions;
-    WDF_REQUEST_SEND_OPTIONS_INIT(&sendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS);
-
-    if (!WdfRequestSend(request, deviceContext->HidIoTarget, &sendOptions)) {
-        status = WdfRequestGetStatus(request);
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! WdfRequestSend failed: %!STATUS!", status);
-        goto Exit;
-    }
-
-    // Copy response back to caller
-    if (pHidPacket->reportBufferLen > ReportBufferSize) {
-        status = STATUS_BUFFER_OVERFLOW;
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "%!FUNC! Response too large");
-        goto Exit;
-    }
-
-    RtlCopyMemory(pReportBuffer, pHidPacket->reportBuffer, pHidPacket->reportBufferLen);
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Input report read successfully, size=%lu", pHidPacket->reportBufferLen);
-
-Exit:
-	if (pMDL != NULL) {
-		IoFreeMdl(pMDL);
-	}
-    if (request != NULL) {
-        WdfObjectDelete(request);
-    }
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit: %!STATUS!", status);
     return status;
 }
 

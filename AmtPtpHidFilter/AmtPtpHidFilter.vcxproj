@@ -239,6 +239,7 @@
   <ItemGroup>
     <ClCompile Include="Detour.c" />
     <ClCompile Include="Device.c" />
+    <ClCompile Include="Battery.c" />
     <ClCompile Include="Diagnostics.c" />
     <ClCompile Include="Driver.c" />
     <ClCompile Include="Hid.c" />

@@ -25,6 +25,9 @@
     <ClCompile Include="Driver.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Battery.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Device.c">
       <Filter>Source Files</Filter>
     </ClCompile>
