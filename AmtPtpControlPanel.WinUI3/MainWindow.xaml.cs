@@ -62,12 +62,14 @@ namespace AmtPtpControlPanel.WinUI3
             RootGrid.ActualThemeChanged += (s, e) => UpdateTitleBarButtonColors();
         }
 
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             UpdateTitleBarButtonColors();
             ApplyLocalization();
             PopulateLanguageCombo();
             LoadSettings();
+
+            await UpdateBatteryAsync(showErrorOnFailure: false);
         }
 
         private void PopulateLanguageCombo()
@@ -317,23 +319,20 @@ namespace AmtPtpControlPanel.WinUI3
 
         private async void UpdateBatteryButton_Click(object sender, RoutedEventArgs e)
         {
-            UpdateBatteryButton.IsEnabled = false;
-            try
-            {
-                uint level;
-                if (BtDevice.SendIoctl(BtDevice.IOCTL_GET_BATTERY, out level))
-                    ShowBattery("Bluetooth", level);
-                else if (UsbDevice.GetBattery(out level))
-                    ShowBattery("USB", level);
-                else
-                    await ShowErrorAsync(
-                        T("Message.Error", "Error"),
-                        T("Message.NoDevice", "No Magic Trackpad 2 connected via USB or Bluetooth found."));
-            }
-            finally
-            {
-                UpdateBatteryButton.IsEnabled = true;
-            }
+            await UpdateBatteryAsync(showErrorOnFailure: true);
+        }
+
+        private async Task UpdateBatteryAsync(bool showErrorOnFailure)
+        {
+            uint level;
+            if (BtDevice.SendIoctl(BtDevice.IOCTL_GET_BATTERY, out level))
+                ShowBattery("Bluetooth", level);
+            else if (UsbDevice.GetBattery(out level))
+                ShowBattery("USB", level);
+            else if (showErrorOnFailure)
+                await ShowErrorAsync(
+                    T("Message.Error", "Error"),
+                    T("Message.NoDevice", "No Magic Trackpad 2 connected via USB or Bluetooth found."));
         }
 
         private void ShowBattery(string source, uint level)
@@ -342,6 +341,11 @@ namespace AmtPtpControlPanel.WinUI3
                 return;
 
             BatteryProgressBar.Value = level;
+
+            int bucket = Math.Clamp((int)Math.Round(level / 10.0, MidpointRounding.AwayFromZero), 0, 10);
+            int glyphCode = source == "USB" ? 0xF5FD + bucket : 0xF5F2 + bucket;
+            BatteryIcon.Glyph = ((char)glyphCode).ToString();
+
             BatteryTitle.Text = string.Format("{0} ({1}%)", T("Section.Battery", "Battery"), level);
             BatteryStatusText.Text = string.Format(
                 T("Battery.LastUpdated", "Battery ({0}) --- LAST UPDATED: {1}"),
