@@ -16,9 +16,9 @@ The previous version of this project used a hack to install itself in the Driver
 
 0) Uninstall any previous versions of this driver, imbushuo or `official 2021 Apple driver`. Personally I use [DriverStore Explorer](https://github.com/lostindark/DriverStoreExplorer) for that, alternatively you can use Windows Device Manager. Also, **it's especially important to uninstall `Magic Utilities` and `Trackpad++`** before continuing with the installation!
 
-1) Download the zip file of this project from the [Releases](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/releases) of this repo and unzip it.
+1) Select your architecture (AMD64 or ARM64) and download the corresponding zip file from the [Releases](https://github.com/vitoplantamura/MagicTrackpad2ForWindows/releases) of this repo and unzip it.
 
-2) Select your architecture: AMD64 or ARM64. Right-click on the INF file and click "Install".
+2) Right-click on the INF file and click "Install".
 
 ### Note about Windows 10
 
