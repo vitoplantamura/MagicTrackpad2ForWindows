@@ -53,6 +53,8 @@ echo   ButtonDisabled        Disable the physical click button
 echo   IgnoreButtonFinger    Ignore the finger that is clicking
 echo   IgnoreNearFingers     Ignore fingers hovering just above the pad
 echo   PalmRejection         Reject palm touches
+echo   OverrideWindowsHaptics Use FeedbackClick/FeedbackRelease even when Windows
+echo                         sends its own click force and haptic intensity
 echo.
 echo Other numeric DWORD options:
 echo   FeedbackClick         e.g. 0x060617 (medium click)

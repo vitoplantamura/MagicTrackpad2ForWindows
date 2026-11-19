@@ -1,6 +1,8 @@
 // MagicTrackpad2.h: Magic Trackpad 2 specific HID information
 #pragma once
 
+#include "../../../common/MagicTrackpad2Haptics.h"
+
 /* Per-contact extras appended to every finger collection, right after Y (12 bytes).
    Width (0x48) / Height (0x49): X/Y extent of the touch ellipse's bounding box, computed
    from TouchMajor/TouchMinor << 2 (the scaling Linux hid-magicmouse uses) rotated by the
@@ -182,4 +184,5 @@
 		REPORT_SIZE, 0x08, \
 		REPORT_COUNT_2, 0x00, 0x01, \
 		FEATURE, 0x02, \
+		MT2_HAPTICS_PTP_TLC_ITEMS, /* Haptics: see common/MagicTrackpad2Haptics.h */ \
 	END_COLLECTION /* End Collection */

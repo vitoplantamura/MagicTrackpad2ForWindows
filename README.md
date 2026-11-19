@@ -26,6 +26,12 @@ Windows 10 AMD64 is supported through a self-signed driver package.
 
 Windows 10 ARM64 is not supported.
 
+## Haptic feedback
+
+The driver presents the trackpad to Windows as a haptic touchpad. On Windows 11 builds that support haptic touchpads, **Settings > Bluetooth & devices > Touchpad** controls the click sensitivity (Light/Medium/Heavy), the haptic click intensity, and the intensity of haptic signals: short taps Windows plays itself, for example when a window snaps into place. The lowest intensity gives a quiet click that you still feel; the trackpad can't click with no feedback at all. To use the Control Panel's click options instead, pick one of them there: that overrides the Windows settings. On Windows 10 the Control Panel's click options always apply.
+
+The values behind these settings were tuned by feel on one trackpad, and you may prefer different ones. They are all in one table, in [`common/MagicTrackpad2Haptics.h`](common/MagicTrackpad2Haptics.h). The comment at the top of that file explains what each byte does and how to recalibrate. [`tools/HapticsLab`](tools/HapticsLab) is a small developer app for this. It has one step per setting, each explaining where Windows uses it and what to feel for. You can try candidates on the pad, rate them, and write your choices back to the table, or copy a feedback report to share. [`tools/haptic_shc_test.py`](tools/haptic_shc_test.py) fires the installed driver's waveforms from the command line. If you find values that feel better, please open an issue or a pull request.
+
 ## Credits
 
 - [This excellent PR](https://github.com/imbushuo/mac-precision-touchpad/pull/533) of [1Revenger1](https://github.com/1Revenger1) to the imbushuo repo, which fixes the "near field fingers" problem, cleans up the code, and removes the QueryPerformanceCounter call in the interrupt function.

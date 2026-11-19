@@ -292,6 +292,9 @@ namespace AmtPtpControlPanel
                         keyParameters.SetValue("IgnoreButtonFinger", ignoreButtonFinger);
                         keyParameters.SetValue("IgnoreNearFingers", ignoreNearFingers);
                         keyParameters.SetValue("PalmRejection", palmRejection);
+                        // This panel has no option for the Windows haptic settings (Settings > Bluetooth & devices >
+                        // Touchpad), so whatever is chosen here overrides them. The WinUI 3 panel can switch back.
+                        keyParameters.SetValue("OverrideWindowsHaptics", 1);
                     }
                 };
 

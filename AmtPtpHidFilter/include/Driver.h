@@ -37,6 +37,8 @@ typedef struct _DRIVER_CONTEXT {
 	BOOLEAN InvertMovement;
 	ULONG FeedbackClick;
 	ULONG FeedbackRelease;
+	// Use FeedbackClick/FeedbackRelease even after Windows has sent its haptic settings.
+	BOOLEAN OverrideWindowsHaptics;
 } DRIVER_CONTEXT, *PDRIVER_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DRIVER_CONTEXT, PtpFilterDriverGetContext)

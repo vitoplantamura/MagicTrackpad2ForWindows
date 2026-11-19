@@ -259,6 +259,52 @@ PtpFilterGetHidFeatures(
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_PTPHQA is fulfilled");
 		break;
 	}
+	case REPORTID_HAPTIC_BUTTON_THRESHOLD:
+	{
+		reportSize = sizeof(MT2_HAPTIC_BUTTON_THRESHOLD_REPORT);
+		if (hidContent->reportBufferLen < reportSize) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_HID, "%!FUNC! Report buffer is too small");
+			goto exit;
+		}
+
+		PMT2_HAPTIC_BUTTON_THRESHOLD_REPORT thresholdReport = (PMT2_HAPTIC_BUTTON_THRESHOLD_REPORT)hidContent->reportBuffer;
+		thresholdReport->ReportID = REPORTID_HAPTIC_BUTTON_THRESHOLD;
+		thresholdReport->Threshold = Mt2HapticStateThreshold(InterlockedCompareExchange(&deviceContext->WindowsHapticState, 0, 0));
+		WdfRequestSetInformation(Request, reportSize);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_HAPTIC_BUTTON_THRESHOLD: %d", thresholdReport->Threshold);
+		break;
+	}
+	case REPORTID_HAPTIC_INTENSITY:
+	{
+		reportSize = sizeof(MT2_HAPTIC_INTENSITY_REPORT);
+		if (hidContent->reportBufferLen < reportSize) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_HID, "%!FUNC! Report buffer is too small");
+			goto exit;
+		}
+
+		PMT2_HAPTIC_INTENSITY_REPORT intensityReport = (PMT2_HAPTIC_INTENSITY_REPORT)hidContent->reportBuffer;
+		intensityReport->ReportID = REPORTID_HAPTIC_INTENSITY;
+		intensityReport->Intensity = Mt2HapticStateIntensity(InterlockedCompareExchange(&deviceContext->WindowsHapticState, 0, 0));
+		WdfRequestSetInformation(Request, reportSize);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_HAPTIC_INTENSITY: %d", intensityReport->Intensity);
+		break;
+	}
+	case REPORTID_HAPTIC_WAVEFORMS:
+	{
+		reportSize = sizeof(MT2_HAPTIC_WAVEFORM_LIST_REPORT);
+		if (hidContent->reportBufferLen < reportSize) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_HID, "%!FUNC! Report buffer is too small");
+			goto exit;
+		}
+
+		Mt2HapticFillWaveformListReport((PMT2_HAPTIC_WAVEFORM_LIST_REPORT)hidContent->reportBuffer);
+		WdfRequestSetInformation(Request, reportSize);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_HAPTIC_WAVEFORMS is fulfilled");
+		break;
+	}
 	default:
 	{
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Unsupported type %d is requested", hidContent->reportId);
@@ -342,6 +388,45 @@ PtpFilterSetHidFeatures(
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_FUNCSWITCH is fulfilled");
 		break;
 	}
+	case REPORTID_HAPTIC_BUTTON_THRESHOLD:
+	{
+		if (hidPacket->reportBufferLen < sizeof(MT2_HAPTIC_BUTTON_THRESHOLD_REPORT)) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			goto exit;
+		}
+
+		UCHAR threshold = ((PMT2_HAPTIC_BUTTON_THRESHOLD_REPORT)hidPacket->reportBuffer)->Threshold;
+		if (threshold < MT2_HAPTIC_THRESHOLD_MIN || threshold > MT2_HAPTIC_THRESHOLD_MAX) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_HID, "%!FUNC! Button press threshold %d out of range", threshold);
+			status = STATUS_INVALID_PARAMETER;
+			goto exit;
+		}
+
+		// Pushed to the pad by a work item: the send can take seconds on a link that is coming up.
+		Mt2HapticUpdateState(&deviceContext->WindowsHapticState, threshold, MT2_HAPTIC_UNCHANGED);
+		WdfWorkItemEnqueue(deviceContext->HapticApplyWorkItem);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_HAPTIC_BUTTON_THRESHOLD set to %d", threshold);
+		break;
+	}
+	case REPORTID_HAPTIC_INTENSITY:
+	{
+		if (hidPacket->reportBufferLen < sizeof(MT2_HAPTIC_INTENSITY_REPORT)) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			goto exit;
+		}
+
+		UCHAR intensity = ((PMT2_HAPTIC_INTENSITY_REPORT)hidPacket->reportBuffer)->Intensity;
+		if (intensity > MT2_HAPTIC_INTENSITY_MAX) {
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_HID, "%!FUNC! Haptic intensity %d out of range", intensity);
+			status = STATUS_INVALID_PARAMETER;
+			goto exit;
+		}
+
+		Mt2HapticUpdateState(&deviceContext->WindowsHapticState, MT2_HAPTIC_UNCHANGED, intensity);
+		WdfWorkItemEnqueue(deviceContext->HapticApplyWorkItem);
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Report REPORTID_HAPTIC_INTENSITY set to %d", intensity);
+		break;
+	}
 	default:
 	{
 		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Unsupported type %d is requested", hidPacket->reportId);
@@ -353,4 +438,122 @@ PtpFilterSetHidFeatures(
 exit:
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Exit");
 	return status;
+}
+
+// Haptic Manual Trigger output report (host-initiated feedback, "Haptic signals" in Windows Settings).
+// Validated here, on the parallel default queue, then forwarded to the sequential HapticQueue.
+NTSTATUS
+PtpFilterHapticOutputReport(
+	_In_ WDFDEVICE Device,
+	_In_ WDFREQUEST Request,
+	_Out_ BOOLEAN* Pending
+)
+{
+	NTSTATUS status;
+	PDEVICE_CONTEXT deviceContext;
+	PHID_XFER_PACKET hidPacket;
+	PMT2_HAPTIC_MANUAL_TRIGGER_REPORT report;
+
+	*Pending = FALSE;
+	deviceContext = PtpFilterGetContext(Device);
+
+	hidPacket = (PHID_XFER_PACKET)WdfRequestWdmGetIrp(Request)->UserBuffer;
+	if (hidPacket == NULL || hidPacket->reportBuffer == NULL) {
+		return STATUS_INVALID_DEVICE_REQUEST;
+	}
+
+	if (hidPacket->reportId != REPORTID_HAPTIC_MANUAL_TRIGGER ||
+		hidPacket->reportBufferLen < sizeof(MT2_HAPTIC_MANUAL_TRIGGER_REPORT)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_HID, "%!FUNC! Unexpected output report 0x%02X, %lu bytes",
+			hidPacket->reportId, hidPacket->reportBufferLen);
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	report = (PMT2_HAPTIC_MANUAL_TRIGGER_REPORT)hidPacket->reportBuffer;
+	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Manual trigger: ordinal %d, intensity %d",
+		report->ManualTrigger, report->Intensity);
+
+	// None: nothing to play, and it must not affect what is playing
+	if (report->ManualTrigger == MT2_HAPTIC_ORDINAL_NONE) {
+		WdfRequestSetInformation(Request, hidPacket->reportBufferLen);
+		return STATUS_SUCCESS;
+	}
+
+	status = WdfRequestForwardToIoQueue(Request, deviceContext->HapticQueue);
+	if (NT_SUCCESS(status)) {
+		*Pending = TRUE;
+	}
+	else {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_HID, "%!FUNC! WdfRequestForwardToIoQueue failed: %!STATUS!", status);
+	}
+
+	return status;
+}
+
+// Fires queued Manual Triggers one at a time. A trigger with a newer one waiting behind it is
+// dropped (latest wins): a send takes about 70 ms over Bluetooth, so a burst of triggers, or a
+// Stop, must not build up a backlog.
+VOID
+PtpFilterHapticEvtIoIntDeviceControl(
+	_In_ WDFQUEUE Queue,
+	_In_ WDFREQUEST Request,
+	_In_ size_t OutputBufferLength,
+	_In_ size_t InputBufferLength,
+	_In_ ULONG IoControlCode
+)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	WDFDEVICE device;
+	PDEVICE_CONTEXT deviceContext;
+	PHID_XFER_PACKET hidPacket;
+	PMT2_HAPTIC_MANUAL_TRIGGER_REPORT report;
+	ULONG waiting = 0;
+	ULONG feedback[MT2_HAPTIC_MAX_PULSES];
+	ULONG pulses;
+	ULONG i;
+
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(IoControlCode);
+
+	device = WdfIoQueueGetDevice(Queue);
+	deviceContext = PtpFilterGetContext(device);
+
+	// Already validated by PtpFilterHapticOutputReport
+	hidPacket = (PHID_XFER_PACKET)WdfRequestWdmGetIrp(Request)->UserBuffer;
+	report = (PMT2_HAPTIC_MANUAL_TRIGGER_REPORT)hidPacket->reportBuffer;
+
+	WdfIoQueueGetState(Queue, &waiting, NULL);
+	if (waiting != 0) {
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Ordinal %d superseded by %lu newer trigger(s)",
+			report->ManualTrigger, waiting);
+	}
+	else if (InterlockedCompareExchange(&deviceContext->HapticsReady, 0, 0) == 0) {
+		// Not configured yet: a send could stall on a link that is still coming up (#68)
+		TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Pad not configured yet, ordinal %d dropped",
+			report->ManualTrigger);
+	}
+	else {
+		// Chained pulses: each send takes about 70 ms over Bluetooth, which is already longer than
+		// MT2_HAPTIC_PULSE_GAP_MS, and PtpFilterActuateTrigger keeps the 20 ms minimum gap.
+		pulses = Mt2HapticPulsesForTrigger(report->ManualTrigger, report->Intensity, feedback);
+		for (i = 0; i < pulses && NT_SUCCESS(status); i++) {
+			if (i != 0) {
+				// A newer trigger cuts the rest of this chain short
+				WdfIoQueueGetState(Queue, &waiting, NULL);
+				if (waiting != 0) {
+					TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_HID, "%!FUNC! Ordinal %d cut short after %lu pulse(s)",
+						report->ManualTrigger, i);
+					break;
+				}
+			}
+
+			status = PtpFilterActuateTrigger(device, feedback[i]);
+			TraceEvents(NT_SUCCESS(status) ? TRACE_LEVEL_INFORMATION : TRACE_LEVEL_ERROR, TRACE_HID,
+				"%!FUNC! Ordinal %d, intensity %d, pulse %lu/%lu -> 0x%06lX: %!STATUS!",
+				report->ManualTrigger, report->Intensity, i + 1, pulses, feedback[i], status);
+		}
+	}
+
+	WdfRequestCompleteWithInformation(Request, status, NT_SUCCESS(status) ? hidPacket->reportBufferLen : 0);
 }

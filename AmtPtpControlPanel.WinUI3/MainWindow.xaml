@@ -100,6 +100,72 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Windows haptic settings -->
+                <Expander
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    IsExpanded="False">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal" Spacing="12" Padding="0,16,0,16">
+                                <Border Style="{StaticResource SettingsIconTileStyle}">
+                                    <FontIcon
+                                        Glyph="&#xE713;"
+                                        FontFamily="Segoe MDL2 Assets"
+                                        Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock
+                                        x:Name="ClickFeedbackWindowsTitle"
+                                        Margin="0"
+                                        Style="{StaticResource CardTitleStyle}"
+                                        Text="Click feel from Windows Settings" />
+                                    <TextBlock
+                                        x:Name="WindowsHapticHeaderStatus"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{StaticResource CaptionTextBlockStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Expander.Header>
+                        <StackPanel Spacing="12">
+
+                        <RadioButton
+                            x:Name="WindowsHapticSettings"
+                            Content="Let Windows Settings control the click (recommended)"
+                            Checked="ClickOptions_Checked" />
+
+                        <TextBlock
+                            x:Name="WindowsHapticSettingsNote"
+                            Padding="28,0,0,0"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="WrapWholeWords"
+                            Text="" />
+
+                        <InfoBar
+                            x:Name="WindowsHapticAvailability"
+                            Margin="28,0,0,0"
+                            IsOpen="True"
+                            IsClosable="False" />
+
+                        <StackPanel Orientation="Horizontal" Margin="16,0,0,0" Spacing="8">
+                            <HyperlinkButton
+                                x:Name="WindowsHapticSettingsLink"
+                                Click="TouchpadSettingsButton_Click"
+                                Content="Open Windows touchpad settings" />
+                        </StackPanel>
+
+                        <TextBlock
+                            x:Name="WindowsHapticOverrideNote"
+                            Padding="28,0,0,0"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="WrapWholeWords"
+                            Text="" />
+                    </StackPanel>
+                    </Expander>
+
                 <!-- macOS click options -->
                 <Expander
                     HorizontalAlignment="Stretch"
@@ -133,6 +199,15 @@
                             x:Name="MacOSClickOptions"
                             Content="Use macOS Click Options:"
                             Checked="ClickOptions_Checked" />
+
+                        <TextBlock
+                            x:Name="MacOSFallbackNote"
+                            Padding="28,0,0,0"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="WrapWholeWords"
+                            Visibility="Collapsed"
+                            Text="" />
 
                         <StackPanel x:Name="MacOSOptionsPanel" Padding="28,0,0,0" Orientation="Horizontal" Spacing="48">
                             <StackPanel Spacing="8">

@@ -2,6 +2,22 @@
 <Localization>
   <Language id="en">
     <String id="Main">Magic Trackpad 2 Control Panel</String>
+    <String id="Section.ClickFeedbackWindows">Click feel from Windows Settings</String>
+    <String id="ctlWindowsHapticSettings">Let Windows Settings control the click (recommended)</String>
+    <String id="ctlWindowsHapticSettingsNote">Windows Settings &gt; Bluetooth &amp; devices &gt; Touchpad then has three controls for this trackpad: Click sensitivity (how hard you press to click), Haptic click (how strong the click feels) and Haptic signals (short taps Windows plays, for example when a window snaps into place).</String>
+    <String id="ctlWindowsHapticSettingsLink">Open Windows touchpad settings</String>
+    <String id="ctlWindowsHapticOverrideNote">Choosing any other click option on this page overrides Windows Settings.</String>
+    <String id="ctlWindowsHapticFoundTitle">Available on this PC</String>
+    <String id="ctlWindowsHapticFound">Your Windows has haptic touchpad settings. Changes there apply to the trackpad right away.</String>
+    <String id="ctlWindowsHapticWin10Title">Not available on Windows 10</String>
+    <String id="ctlWindowsHapticWin10">Windows 10 has no haptic touchpad settings, so the trackpad uses the macOS click options below. Everything else works as usual.</String>
+    <String id="ctlWindowsHapticNotFoundTitle">Your Windows may not have these settings yet</String>
+    <String id="ctlWindowsHapticNotFound">If Touchpad settings show no Click sensitivity or Haptic click, this version of Windows 11 doesn't support haptic touchpads. The trackpad then uses the macOS click options below, and everything else works as usual. You can keep this option: Windows takes over once an update adds the settings.</String>
+    <String id="ctlWindowsHapticStatusOverridden">Not in use: a click option below overrides Windows Settings</String>
+    <String id="ctlWindowsHapticStatusActive">In use</String>
+    <String id="ctlWindowsHapticStatusFallback">Selected. Until Windows has these settings, the macOS click options apply</String>
+    <String id="ctlMacOSFallbackBackup">Windows Settings controls the click. These options only apply for the moment after the trackpad connects, before Windows sends its settings.</String>
+    <String id="ctlMacOSFallbackActive">In use now: Windows has no haptic touchpad settings here, so these options set how the click feels.</String>
     <String id="Section.ClickFeedbackMacOS">MacOS click options</String>
     <String id="ctlMacOSClickOptions">Use macOS Click Options:</String>
     <String id="ctlSilentClicking">Silent clicking</String>

@@ -70,6 +70,30 @@ AmtPtpDeviceQueueInitialize(
 		return status;
 	}
 
+	//
+	// Haptic Manual Trigger output reports from Windows, one at a time
+	//
+	WDF_IO_QUEUE_CONFIG_INIT(&queueConfig, WdfIoQueueDispatchSequential);
+	queueConfig.PowerManaged = WdfFalse;
+	queueConfig.EvtIoDeviceControl = AmtPtpHapticEvtIoDeviceControl;
+
+	status = WdfIoQueueCreate(
+		Device,
+		&queueConfig,
+		WDF_NO_OBJECT_ATTRIBUTES,
+		&deviceContext->HapticQueue
+	);
+
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(
+			TRACE_LEVEL_ERROR,
+			TRACE_QUEUE,
+			"%!FUNC! WdfIoQueueCreate (Haptic) failed %!STATUS!",
+			status
+		);
+		return status;
+	}
+
 	return status;
 
 }
@@ -181,6 +205,12 @@ AmtPtpDeviceEvtIoDeviceControl(
 			break;
 		case IOCTL_HID_WRITE_REPORT:
 		case IOCTL_UMDF_HID_SET_OUTPUT_REPORT:
+			status = AmtPtpHapticOutputReport(
+				device,
+				Request,
+				&requestPending
+			);
+			break;
 		case IOCTL_UMDF_HID_GET_INPUT_REPORT:
 		case IOCTL_HID_ACTIVATE_DEVICE:
 		case IOCTL_HID_DEACTIVATE_DEVICE:

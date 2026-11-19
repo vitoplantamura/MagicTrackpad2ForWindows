@@ -15,6 +15,9 @@ DEFINE_GUID(GUID_DEVICEINTERFACE_AmtPtpHidFilter,
 // the first acknowledgement has been seen to take about 5 s, and sometimes it never comes.
 #define PTP_FEATURE_REPORT_TIMEOUT_SEC 8
 
+// Minimum time between two actuations, in 100 ns units (20 ms, as LinuxMagicForce uses).
+#define PTP_ACTUATE_MIN_GAP (20 * 10000ULL)
+
 #define HID_VID_APPLE_USB 0x05ac
 #define HID_VID_APPLE_BT  0x004c
 #define HID_PID_MAGIC_TRACKPAD_2 0x0265
@@ -94,6 +97,17 @@ typedef struct _DEVICE_CONTEXT
 	// for locking the pointer
 	PTP_REPORT_AUX  PrevPtpReportAux1, PrevPtpReportAux2;
 	UCHAR           PrevIsButtonClicked;
+
+	// Windows haptic touchpad settings (Button Press Threshold and Haptic Intensity feature
+	// reports), packed with MT2_HAPTIC_STATE_MAKE. 0 until Windows sends them.
+	volatile LONG   WindowsHapticState;
+	// Set once the pad has acknowledged the multitouch switch since start or D0 entry, so a
+	// SET_FEATURE from Windows cannot stall on a link that is still coming up (#68). Cleared
+	// with DeviceConfigured on start and D0 exit; the configuration then pushes the settings.
+	volatile LONG   HapticsReady;
+	WDFWAITLOCK     HapticApplyLock;      // serializes pushes of the click waveform
+	WDFWORKITEM     HapticApplyWorkItem;  // pushes it after a SET_FEATURE from Windows
+	WDFQUEUE        HapticQueue;          // sequential: Windows' haptic Manual Trigger output reports
 	
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
@@ -140,8 +154,21 @@ PtpFilterSetHapticFeedback(
     _In_ ULONG FeedbackRelease
 );
 
+VOID
+PtpFilterApplyHapticFeedback(
+    _In_ WDFDEVICE Device
+);
+
+EVT_WDF_WORKITEM PtpFilterHapticApplyWorkItem;
+
 NTSTATUS
 PtpFilterActuate(
+    _In_ WDFDEVICE Device,
+    _In_ ULONG Feedback
+);
+
+NTSTATUS
+PtpFilterActuateTrigger(
     _In_ WDFDEVICE Device,
     _In_ ULONG Feedback
 );

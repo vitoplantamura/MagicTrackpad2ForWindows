@@ -46,6 +46,21 @@ PtpFilterIoQueueInitialize(
     status = WdfIoQueueCreate(Device, &queueConfig, WDF_NO_OBJECT_ATTRIBUTES, &deviceContext->HidReadQueue);
     if (!NT_SUCCESS(status)) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_QUEUE, "%!FUNC! WdfIoQueueCreate (Input) failed %!STATUS!", status);
+        goto exit;
+    }
+
+    // Third queue for haptic Manual Trigger output reports from Windows, one at a time. Its callback
+    // waits on a lock, sleeps and sends synchronously, so it must run at PASSIVE_LEVEL: the device
+    // object doesn't set an execution level, and a request forwarded to an idle queue is otherwise
+    // dispatched at the IRQL of whoever sent it.
+    WDF_IO_QUEUE_CONFIG_INIT(&queueConfig, WdfIoQueueDispatchSequential);
+    queueConfig.PowerManaged = WdfFalse;
+    queueConfig.EvtIoInternalDeviceControl = PtpFilterHapticEvtIoIntDeviceControl;
+    WDF_OBJECT_ATTRIBUTES_INIT(&queueAttributes);
+    queueAttributes.ExecutionLevel = WdfExecutionLevelPassive;
+    status = WdfIoQueueCreate(Device, &queueConfig, &queueAttributes, &deviceContext->HapticQueue);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_QUEUE, "%!FUNC! WdfIoQueueCreate (Haptic) failed %!STATUS!", status);
     }
 
 exit:
@@ -98,6 +113,9 @@ FilterEvtIoIntDeviceControl(
 		status = PtpFilterSetHidFeatures(queueContext->Device, Request);
 		break;
 	case IOCTL_HID_WRITE_REPORT:
+	case IOCTL_HID_SET_OUTPUT_REPORT:
+		status = PtpFilterHapticOutputReport(queueContext->Device, Request, &requestPending);
+		break;
 	case IOCTL_UMDF_HID_SET_OUTPUT_REPORT:
 	case IOCTL_UMDF_HID_GET_INPUT_REPORT:
 	case IOCTL_HID_ACTIVATE_DEVICE:

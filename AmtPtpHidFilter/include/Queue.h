@@ -20,5 +20,13 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(QUEUE_CONTEXT, PtpFilterQueueGetContext)
 // Event handlers
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL FilterEvtIoIntDeviceControl;
 EVT_WDF_IO_QUEUE_IO_STOP FilterEvtIoStop;
+EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL PtpFilterHapticEvtIoIntDeviceControl;
+
+NTSTATUS
+PtpFilterHapticOutputReport(
+    _In_ WDFDEVICE Device,
+    _In_ WDFREQUEST Request,
+    _Out_ BOOLEAN* Pending
+);
 
 EXTERN_C_END

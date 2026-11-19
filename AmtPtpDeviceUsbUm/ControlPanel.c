@@ -136,18 +136,6 @@ AmtPtpReadBatteryLevel(
 	return STATUS_SUCCESS;
 }
 
-// Milliseconds on a precise monotonic clock (GetTickCount64 steps by ~16 ms).
-static
-ULONGLONG
-AmtPtpMilliseconds(VOID)
-{
-    LARGE_INTEGER counter, frequency;
-
-    QueryPerformanceCounter(&counter);
-    QueryPerformanceFrequency(&frequency);
-    return (ULONGLONG)(counter.QuadPart / (frequency.QuadPart / 1000));
-}
-
 //
 // Waits on either the overlapped I/O event or the stop event.
 // Returns TRUE if the I/O completed (caller must call GetOverlappedResult),
@@ -202,7 +190,6 @@ AmtPtpControlPanelPipeThread(
     DWORD           bytesRead = 0;
     DWORD           bytesWritten = 0;
     SECURITY_ATTRIBUTES pipeSecurity = { sizeof(SECURITY_ATTRIBUTES), NULL, FALSE };
-    ULONGLONG       lastActuate = 0;
 
     ioEvent = CreateEventW(NULL, TRUE /*manual reset*/, FALSE, NULL);
     if (ioEvent == NULL) {
@@ -334,9 +321,7 @@ AmtPtpControlPanelPipeThread(
         switch (request[0]) {
         case CONTROLPANEL_CMD_RELOAD_SETTINGS:
         {
-            ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
-            ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
-            NTSTATUS st = AmtPtpSetHapticFeedback(devCtx, feedbackClick, feedbackRelease);
+            NTSTATUS st = AmtPtpApplyHapticFeedback(devCtx);
 
             if (NT_SUCCESS(st)) {
                 devCtx->PrevPtpReportAuxAndSettingsInited = FALSE;
@@ -361,18 +346,11 @@ AmtPtpControlPanelPipeThread(
         }
         case CONTROLPANEL_CMD_ACTUATE:
         {
-            // One request at a time is served, so the gap needs no lock.
+            // Paced together with Windows' haptic triggers
             ULONG       feedback = (bytesRead == 4)
                 ? (ULONG)request[1] | ((ULONG)request[2] << 8) | ((ULONG)request[3] << 16)
                 : ReadSettingValue(L"FeedbackClick", 0x08081E);
-            ULONGLONG   elapsed = AmtPtpMilliseconds() - lastActuate;
-            NTSTATUS    st;
-
-            if (elapsed < ACTUATE_MIN_GAP_MS) {
-                Sleep((DWORD)(ACTUATE_MIN_GAP_MS - elapsed));
-            }
-            lastActuate = AmtPtpMilliseconds();
-            st = AmtPtpActuate(devCtx, feedback);
+            NTSTATUS    st = AmtPtpActuatePaced(devCtx, feedback, ACTUATE_MIN_GAP_MS);
 
             response[0] = NT_SUCCESS(st)
                 ? CONTROLPANEL_STATUS_OK
