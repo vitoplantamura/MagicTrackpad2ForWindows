@@ -738,6 +738,58 @@ AmtPtpReportFeatures(
 			);
 			break;
 		}
+		case REPORTID_HAPTIC_BUTTON_THRESHOLD:
+		case REPORTID_HAPTIC_INTENSITY:
+		case REPORTID_HAPTIC_WAVEFORMS:
+		{
+			// Only the Magic Trackpad 2 descriptor declares the haptic reports
+			if (!AmtPtpIsMagicTrackpad2(deviceContext)) {
+				status = STATUS_NOT_SUPPORTED;
+				goto exit;
+			}
+
+			LONG windowsState = InterlockedCompareExchange(&deviceContext->WindowsHapticState, 0, 0);
+			reportSize = (packet.reportId == REPORTID_HAPTIC_WAVEFORMS)
+				? sizeof(MT2_HAPTIC_WAVEFORM_LIST_REPORT)
+				: sizeof(MT2_HAPTIC_INTENSITY_REPORT);
+			C_ASSERT(sizeof(MT2_HAPTIC_INTENSITY_REPORT) == sizeof(MT2_HAPTIC_BUTTON_THRESHOLD_REPORT));
+			if (packet.reportBufferLen < reportSize) {
+				status = STATUS_INVALID_BUFFER_SIZE;
+				TraceEvents(
+					TRACE_LEVEL_ERROR,
+					TRACE_DRIVER,
+					"%!FUNC! Report buffer is too small"
+				);
+				goto exit;
+			}
+
+			if (packet.reportId == REPORTID_HAPTIC_BUTTON_THRESHOLD) {
+				PMT2_HAPTIC_BUTTON_THRESHOLD_REPORT thresholdReport = (PMT2_HAPTIC_BUTTON_THRESHOLD_REPORT)packet.reportBuffer;
+				thresholdReport->ReportID = REPORTID_HAPTIC_BUTTON_THRESHOLD;
+				thresholdReport->Threshold = Mt2HapticStateThreshold(windowsState);
+			}
+			else if (packet.reportId == REPORTID_HAPTIC_INTENSITY) {
+				PMT2_HAPTIC_INTENSITY_REPORT intensityReport = (PMT2_HAPTIC_INTENSITY_REPORT)packet.reportBuffer;
+				intensityReport->ReportID = REPORTID_HAPTIC_INTENSITY;
+				intensityReport->Intensity = Mt2HapticStateIntensity(windowsState);
+			}
+			else {
+				Mt2HapticFillWaveformListReport((PMT2_HAPTIC_WAVEFORM_LIST_REPORT)packet.reportBuffer);
+			}
+
+			TraceEvents(
+				TRACE_LEVEL_INFORMATION,
+				TRACE_DRIVER,
+				"%!FUNC! Haptic report 0x%02X is fulfilled",
+				packet.reportId
+			);
+
+			WdfRequestSetInformation(
+				Request,
+				reportSize
+			);
+			break;
+		}
 		default:
 			TraceEvents(
 				TRACE_LEVEL_INFORMATION, 
@@ -973,6 +1025,64 @@ AmtPtpSetFeatures(
 
 			break;
 		}
+		case REPORTID_HAPTIC_BUTTON_THRESHOLD:
+		case REPORTID_HAPTIC_INTENSITY:
+		{
+			// Only the Magic Trackpad 2 descriptor declares the haptic reports
+			if (!AmtPtpIsMagicTrackpad2(deviceContext)) {
+				status = STATUS_NOT_SUPPORTED;
+				goto exit;
+			}
+
+			C_ASSERT(sizeof(MT2_HAPTIC_INTENSITY_REPORT) == sizeof(MT2_HAPTIC_BUTTON_THRESHOLD_REPORT));
+			if (packet.reportBufferLen < sizeof(MT2_HAPTIC_INTENSITY_REPORT)) {
+				status = STATUS_INVALID_BUFFER_SIZE;
+				goto exit;
+			}
+
+			// Both reports carry their value in the byte after the report ID
+			UCHAR value = packet.reportBuffer[1];
+			if (packet.reportId == REPORTID_HAPTIC_BUTTON_THRESHOLD) {
+				if (value < MT2_HAPTIC_THRESHOLD_MIN || value > MT2_HAPTIC_THRESHOLD_MAX) {
+					status = STATUS_INVALID_PARAMETER;
+					goto exit;
+				}
+				Mt2HapticUpdateState(&deviceContext->WindowsHapticState, value, MT2_HAPTIC_UNCHANGED);
+			}
+			else {
+				if (value > MT2_HAPTIC_INTENSITY_MAX) {
+					status = STATUS_INVALID_PARAMETER;
+					goto exit;
+				}
+				Mt2HapticUpdateState(&deviceContext->WindowsHapticState, MT2_HAPTIC_UNCHANGED, value);
+			}
+
+			TraceEvents(
+				TRACE_LEVEL_INFORMATION,
+				TRACE_DRIVER,
+				"%!FUNC! Haptic report 0x%02X set to %d",
+				packet.reportId,
+				value
+			);
+
+			// The value is stored either way; a failed transfer is retried by the next mode switch
+			// or Control Panel reload.
+			NTSTATUS applyStatus = AmtPtpApplyHapticFeedback(deviceContext);
+			if (!NT_SUCCESS(applyStatus)) {
+				TraceEvents(
+					TRACE_LEVEL_ERROR,
+					TRACE_DRIVER,
+					"%!FUNC! AmtPtpApplyHapticFeedback failed with status %!STATUS!",
+					applyStatus
+				);
+			}
+
+			WdfRequestSetInformation(
+				Request,
+				sizeof(MT2_HAPTIC_INTENSITY_REPORT)
+			);
+			break;
+		}
 		default:
 			TraceEvents(
 				TRACE_LEVEL_INFORMATION, 
@@ -992,4 +1102,179 @@ exit:
 	);
 	return status;
 
+}
+
+//
+// Haptic Manual Trigger output report (host-initiated feedback, "Haptic signals" in Windows Settings).
+// Validated here, on the parallel default queue, then forwarded to the sequential HapticQueue.
+//
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+AmtPtpHapticOutputReport(
+	_In_ WDFDEVICE Device,
+	_In_ WDFREQUEST Request,
+	_Out_ BOOLEAN* Pending
+)
+{
+	NTSTATUS status;
+	HID_XFER_PACKET packet;
+	PDEVICE_CONTEXT deviceContext;
+	PMT2_HAPTIC_MANUAL_TRIGGER_REPORT report;
+
+	*Pending = FALSE;
+	deviceContext = DeviceGetContext(Device);
+
+	// Only the Magic Trackpad 2 descriptor declares an output report
+	if (!AmtPtpIsMagicTrackpad2(deviceContext)) {
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	status = RequestGetHidXferPacketToWriteToDevice(
+		Request,
+		&packet
+	);
+
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	if (packet.reportId != REPORTID_HAPTIC_MANUAL_TRIGGER ||
+		packet.reportBufferLen < sizeof(MT2_HAPTIC_MANUAL_TRIGGER_REPORT)) {
+		TraceEvents(
+			TRACE_LEVEL_ERROR,
+			TRACE_QUEUE,
+			"%!FUNC! Unexpected output report 0x%02X, %lu bytes",
+			packet.reportId,
+			packet.reportBufferLen
+		);
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	report = (PMT2_HAPTIC_MANUAL_TRIGGER_REPORT)packet.reportBuffer;
+	TraceEvents(
+		TRACE_LEVEL_INFORMATION,
+		TRACE_QUEUE,
+		"%!FUNC! Manual trigger: ordinal %d, intensity %d",
+		report->ManualTrigger,
+		report->Intensity
+	);
+
+	// None: nothing to play, and it must not affect what is playing
+	if (report->ManualTrigger == MT2_HAPTIC_ORDINAL_NONE) {
+		WdfRequestSetInformation(Request, packet.reportBufferLen);
+		return STATUS_SUCCESS;
+	}
+
+	status = WdfRequestForwardToIoQueue(
+		Request,
+		deviceContext->HapticQueue
+	);
+
+	if (NT_SUCCESS(status)) {
+		*Pending = TRUE;
+	}
+	else {
+		TraceEvents(
+			TRACE_LEVEL_ERROR,
+			TRACE_QUEUE,
+			"%!FUNC! WdfRequestForwardToIoQueue failed with %!STATUS!",
+			status
+		);
+	}
+
+	return status;
+}
+
+//
+// Fires queued Manual Triggers one at a time. A trigger with a newer one waiting behind it is
+// dropped (latest wins), so a burst of triggers, or a Stop, cannot build up a backlog.
+//
+VOID
+AmtPtpHapticEvtIoDeviceControl(
+	_In_ WDFQUEUE Queue,
+	_In_ WDFREQUEST Request,
+	_In_ size_t OutputBufferLength,
+	_In_ size_t InputBufferLength,
+	_In_ ULONG IoControlCode
+)
+{
+	NTSTATUS status;
+	HID_XFER_PACKET packet;
+	PDEVICE_CONTEXT deviceContext;
+	PMT2_HAPTIC_MANUAL_TRIGGER_REPORT report;
+	ULONG waiting = 0;
+	ULONG feedback[MT2_HAPTIC_MAX_PULSES];
+	ULONG pulses;
+	ULONG i;
+	ULONG gap;
+
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(IoControlCode);
+
+	deviceContext = DeviceGetContext(WdfIoQueueGetDevice(Queue));
+
+	status = RequestGetHidXferPacketToWriteToDevice(
+		Request,
+		&packet
+	);
+
+	if (!NT_SUCCESS(status)) {
+		WdfRequestComplete(Request, status);
+		return;
+	}
+
+	// Already validated by AmtPtpHapticOutputReport
+	report = (PMT2_HAPTIC_MANUAL_TRIGGER_REPORT)packet.reportBuffer;
+
+	WdfIoQueueGetState(Queue, &waiting, NULL);
+	if (waiting != 0) {
+		TraceEvents(
+			TRACE_LEVEL_INFORMATION,
+			TRACE_QUEUE,
+			"%!FUNC! Ordinal %d superseded by %lu newer trigger(s)",
+			report->ManualTrigger,
+			waiting
+		);
+	}
+	else {
+		pulses = Mt2HapticPulsesForTrigger(report->ManualTrigger, report->Intensity, feedback);
+		for (i = 0; i < pulses && NT_SUCCESS(status); i++) {
+			if (i != 0) {
+				// A newer trigger cuts the rest of this chain short
+				WdfIoQueueGetState(Queue, &waiting, NULL);
+				if (waiting != 0) {
+					TraceEvents(
+						TRACE_LEVEL_INFORMATION,
+						TRACE_QUEUE,
+						"%!FUNC! Ordinal %d cut short after %lu pulse(s)",
+						report->ManualTrigger,
+						i
+					);
+					break;
+				}
+			}
+
+			// 20 ms before the first pulse of a waveform, the chain gap between its pulses
+			gap = (i == 0) ? 20 : MT2_HAPTIC_PULSE_GAP_MS;
+			status = AmtPtpActuatePaced(deviceContext, feedback[i], gap);
+			TraceEvents(
+				NT_SUCCESS(status) ? TRACE_LEVEL_INFORMATION : TRACE_LEVEL_ERROR,
+				TRACE_QUEUE,
+				"%!FUNC! Ordinal %d, intensity %d, pulse %lu/%lu -> 0x%06lX: %!STATUS!",
+				report->ManualTrigger,
+				report->Intensity,
+				i + 1,
+				pulses,
+				feedback[i],
+				status
+			);
+		}
+	}
+
+	WdfRequestCompleteWithInformation(
+		Request,
+		status,
+		NT_SUCCESS(status) ? packet.reportBufferLen : 0
+	);
 }

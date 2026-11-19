@@ -126,6 +126,25 @@ PtpFilterCreateDevice(
         goto exit;
     }
 
+    // Haptic feedback: pushes of the click waveform, and the work item that pushes
+    // Windows' haptic settings off the HIDCLASS request path
+    WDF_OBJECT_ATTRIBUTES_INIT(&deviceAttributes);
+    deviceAttributes.ParentObject = device;
+    status = WdfWaitLockCreate(&deviceAttributes, &deviceContext->HapticApplyLock);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfWaitLockCreate failed: %!STATUS!", status);
+        goto exit;
+    }
+
+    WDF_WORKITEM_CONFIG_INIT(&workitemConfig, PtpFilterHapticApplyWorkItem);
+    WDF_OBJECT_ATTRIBUTES_INIT(&deviceAttributes);
+    deviceAttributes.ParentObject = device;
+    status = WdfWorkItemCreate(&workitemConfig, &deviceAttributes, &deviceContext->HapticApplyWorkItem);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "WdfWorkItemCreate (haptics) failed: %!STATUS!", status);
+        goto exit;
+    }
+
     // Set initial state
     deviceContext->VendorID = 0;
     deviceContext->ProductID = 0;
@@ -181,6 +200,7 @@ PtpFilterPrepareHardware(
     deviceContext->ProductID = 0;
     deviceContext->VersionNumber = 0;
     deviceContext->DeviceConfigured = FALSE;
+    InterlockedExchange(&deviceContext->HapticsReady, 0);
 
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit, Status = %!STATUS!", status);
     return status;
@@ -221,6 +241,7 @@ PtpFilterDeviceD0Exit(
 
     // Reset device state
     deviceContext->DeviceConfigured = FALSE;
+    InterlockedExchange(&deviceContext->HapticsReady, 0);
 
     // Cancelling all outstanding requests
     while (NT_SUCCESS(status)) {
@@ -560,6 +581,66 @@ Exit:
     return status;
 }
 
+VOID
+PtpFilterApplyHapticFeedback(
+    _In_ WDFDEVICE Device
+)
+{
+    PDEVICE_CONTEXT deviceContext;
+    PDRIVER_CONTEXT driverContext;
+    LONG windowsState;
+    BOOLEAN useWindows;
+    ULONG feedbackClick;
+    ULONG feedbackRelease;
+
+    PAGED_CODE();
+
+    deviceContext = PtpFilterGetContext(Device);
+    driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(Device));
+
+    WdfWaitLockAcquire(deviceContext->HapticApplyLock, NULL);
+
+    windowsState = InterlockedCompareExchange(&deviceContext->WindowsHapticState, 0, 0);
+    useWindows = !driverContext->OverrideWindowsHaptics && MT2_HAPTIC_STATE_IS_VALID(windowsState);
+    Mt2HapticResolveClick(driverContext->OverrideWindowsHaptics, MT2_HAPTIC_STATE_IS_VALID(windowsState),
+        MT2_HAPTIC_STATE_THRESHOLD(windowsState), MT2_HAPTIC_STATE_INTENSITY(windowsState),
+        driverContext->FeedbackClick, driverContext->FeedbackRelease, &feedbackClick, &feedbackRelease);
+
+    if (useWindows) {
+        TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Windows settings: threshold %d, intensity %d -> click 0x%06lX, release 0x%06lX",
+            MT2_HAPTIC_STATE_THRESHOLD(windowsState), MT2_HAPTIC_STATE_INTENSITY(windowsState), feedbackClick, feedbackRelease);
+    }
+    else {
+        TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Driver settings (override %d, Windows values %d): click 0x%06lX, release 0x%06lX",
+            driverContext->OverrideWindowsHaptics, MT2_HAPTIC_STATE_IS_VALID(windowsState), feedbackClick, feedbackRelease);
+    }
+
+    PtpFilterSetHapticFeedback(Device, feedbackClick, feedbackRelease);
+
+    WdfWaitLockRelease(deviceContext->HapticApplyLock);
+}
+
+VOID
+PtpFilterHapticApplyWorkItem(
+    _In_ WDFWORKITEM WorkItem
+)
+{
+    WDFDEVICE device;
+    PDEVICE_CONTEXT deviceContext;
+
+    PAGED_CODE();
+
+    device = (WDFDEVICE)WdfWorkItemGetParentObject(WorkItem);
+    deviceContext = PtpFilterGetContext(device);
+
+    if (InterlockedCompareExchange(&deviceContext->HapticsReady, 0, 0) == 0) {
+        TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Pad not configured yet; the configuration will push the haptic settings");
+        return;
+    }
+
+    PtpFilterApplyHapticFeedback(device);
+}
+
 NTSTATUS
 PtpFilterActuate( // --> Based on: https://github.com/Eriskii/LinuxMagicForce (haptic output report 0xF2 0x53)
     _In_ WDFDEVICE Device,
@@ -601,6 +682,36 @@ PtpFilterActuate( // --> Based on: https://github.com/Eriskii/LinuxMagicForce (h
 Exit:
 
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DEVICE, "%!FUNC! Exit: %!STATUS!", status);
+    return status;
+}
+
+NTSTATUS
+PtpFilterActuateTrigger(
+    _In_ WDFDEVICE Device,
+    _In_ ULONG Feedback
+)
+{
+    PDRIVER_CONTEXT driverContext;
+    ULONGLONG elapsed;
+    LARGE_INTEGER delay;
+    NTSTATUS status;
+
+    PAGED_CODE();
+
+    // Shares the lock and the minimum gap with IOCTL_PTPFILTER_ACTUATE (PtpFilterControlActuate)
+    driverContext = PtpFilterDriverGetContext(WdfDeviceGetDriver(Device));
+    WdfWaitLockAcquire(driverContext->HapticLock, NULL);
+
+    elapsed = KeQueryInterruptTime() - driverContext->LastActuateTime;
+    if (elapsed < PTP_ACTUATE_MIN_GAP) {
+        delay.QuadPart = -(LONGLONG)(PTP_ACTUATE_MIN_GAP - elapsed);
+        KeDelayExecutionThread(KernelMode, FALSE, &delay);
+    }
+    driverContext->LastActuateTime = KeQueryInterruptTime();
+
+    status = PtpFilterActuate(Device, Feedback);
+
+    WdfWaitLockRelease(driverContext->HapticLock);
     return status;
 }
 
@@ -723,7 +834,10 @@ PtpFilterConfigureMultiTouch(
     // Haptics after the mode switch, so a slow or failed haptic report cannot hold up
     // multitouch. Not fatal. driverContext is only set for Bluetooth.
     if (driverContext != NULL) {
-        PtpFilterSetHapticFeedback(Device, driverContext->FeedbackClick, driverContext->FeedbackRelease);
+        // Set before reading Windows' values, so a SET_FEATURE that lands after that read is
+        // pushed by its own work item (both sides use interlocked operations).
+        InterlockedExchange(&deviceContext->HapticsReady, 1);
+        PtpFilterApplyHapticFeedback(Device);
     }
 
 cleanup:

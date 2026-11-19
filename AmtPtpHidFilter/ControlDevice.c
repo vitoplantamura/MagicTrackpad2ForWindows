@@ -3,8 +3,6 @@
 #include <Driver.h>
 #include "ControlDevice.tmh"
 
-// Minimum time between two actuations, in 100 ns units (20 ms, as LinuxMagicForce uses).
-#define ACTUATE_MIN_GAP (20 * 10000ULL)
 
 static NTSTATUS
 PtpFilterControlActuate(
@@ -41,8 +39,8 @@ PtpFilterControlActuate(
 	}
 
 	elapsed = KeQueryInterruptTime() - DriverContext->LastActuateTime;
-	if (elapsed < ACTUATE_MIN_GAP) {
-		delay.QuadPart = -(LONGLONG)(ACTUATE_MIN_GAP - elapsed);
+	if (elapsed < PTP_ACTUATE_MIN_GAP) {
+		delay.QuadPart = -(LONGLONG)(PTP_ACTUATE_MIN_GAP - elapsed);
 		KeDelayExecutionThread(KernelMode, FALSE, &delay);
 	}
 	DriverContext->LastActuateTime = KeQueryInterruptTime();
@@ -86,7 +84,7 @@ PtpFilterEvtIoDeviceControl(
 			status = STATUS_INVALID_DEVICE_STATE;
 		} else {
 			PtpFilterReadSettings(driverContext);
-			PtpFilterSetHapticFeedback(driverContext->CDFirstDevice, driverContext->FeedbackClick, driverContext->FeedbackRelease);
+			PtpFilterApplyHapticFeedback(driverContext->CDFirstDevice);
 		}
         break;
 		

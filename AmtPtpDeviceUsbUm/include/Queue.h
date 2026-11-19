@@ -37,5 +37,14 @@ AmtPtpDispatchReadReportRequests(
 //
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL AmtPtpDeviceEvtIoDeviceControl;
 EVT_WDF_IO_QUEUE_IO_STOP AmtPtpDeviceEvtIoStop;
+EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL AmtPtpHapticEvtIoDeviceControl;
+
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+AmtPtpHapticOutputReport(
+	_In_ WDFDEVICE Device,
+	_In_ WDFREQUEST Request,
+	_Out_ BOOLEAN* Pending
+);
 
 EXTERN_C_END

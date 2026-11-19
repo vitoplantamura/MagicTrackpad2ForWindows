@@ -148,4 +148,5 @@ PtpFilterReadSettings(
 	DriverContext->InvertMovement = PtpFilterReadSettingValue(L"InvertMovement", 0) ? TRUE : FALSE;
 	DriverContext->FeedbackClick = PtpFilterReadSettingValue(L"FeedbackClick", 0x08081E);
 	DriverContext->FeedbackRelease = PtpFilterReadSettingValue(L"FeedbackRelease", 0x020218);
+	DriverContext->OverrideWindowsHaptics = PtpFilterReadSettingValue(L"OverrideWindowsHaptics", 0) ? TRUE : FALSE;
 }

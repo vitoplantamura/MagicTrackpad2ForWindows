@@ -44,6 +44,15 @@ typedef struct _DEVICE_CONTEXT
 	BOOL                        InvertMovement;
 
 	//
+	// Windows haptic touchpad settings (Magic Trackpad 2 only), packed with
+	// MT2_HAPTIC_STATE_MAKE. 0 until Windows sends them.
+	//
+	volatile LONG               WindowsHapticState;
+	WDFWAITLOCK                 HapticLock;   // serializes pushes of the click waveform
+	WDFQUEUE                    HapticQueue;  // sequential: Windows' haptic Manual Trigger output reports
+	ULONGLONG                   LastHapticTriggerMs; // when the last 0x53 pulse started (AmtPtpActuatePaced)
+
+	//
 	// Battery-level named-pipe server
 	//
 	HANDLE                      ControlPanelPipeThread;
@@ -126,9 +135,23 @@ AmtPtpSetHapticFeedback(
 
 _IRQL_requires_(PASSIVE_LEVEL)
 NTSTATUS
+AmtPtpApplyHapticFeedback(
+	_In_ PDEVICE_CONTEXT DeviceContext
+);
+
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
 AmtPtpActuate(
 	_In_ PDEVICE_CONTEXT DeviceContext,
 	_In_ ULONG Feedback
+);
+
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+AmtPtpActuatePaced(
+	_In_ PDEVICE_CONTEXT DeviceContext,
+	_In_ ULONG Feedback,
+	_In_ ULONG MinGapMs
 );
 
 _IRQL_requires_(PASSIVE_LEVEL)

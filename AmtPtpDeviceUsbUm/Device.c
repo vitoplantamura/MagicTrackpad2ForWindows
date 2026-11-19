@@ -80,6 +80,23 @@ AmtPtpCreateDevice(
 	deviceContext = DeviceGetContext(device);
 
 	//
+	// Serializes pushes of the click waveform: a SET_FEATURE from Windows, the Control
+	// Panel reload and the multitouch mode switch can run at the same time.
+	//
+	WDF_OBJECT_ATTRIBUTES_INIT(&deviceAttributes);
+	deviceAttributes.ParentObject = device;
+	status = WdfWaitLockCreate(
+		&deviceAttributes,
+		&deviceContext->HapticLock
+	);
+
+	if (!NT_SUCCESS(status)) {
+		TraceEvents(TRACE_LEVEL_ERROR, TRACE_DRIVER,
+			"%!FUNC! WdfWaitLockCreate failed with Status code %!STATUS!", status);
+		return status;
+	}
+
+	//
 	// Tell the framework to set the SurpriseRemovalOK in the DeviceCaps so
 	// that you don't get the popup in usermode 
 	// when you surprise remove the device.
@@ -467,10 +484,7 @@ AmtPtpSetWellspringMode(
 	// Other families have no haptics, so skip the registry reads and the transfers.
 	if (IsWellspringModeOn && AmtPtpIsMagicTrackpad2(DeviceContext))
 	{
-		ULONG feedbackClick = ReadSettingValue(L"FeedbackClick", 0x08081E);
-		ULONG feedbackRelease = ReadSettingValue(L"FeedbackRelease", 0x020218);
-
-		AmtPtpSetHapticFeedback(DeviceContext, feedbackClick, feedbackRelease);
+		AmtPtpApplyHapticFeedback(DeviceContext);
 	}
 
 	// Type 3 does not need a mode switch.
@@ -629,6 +643,7 @@ AmtPtpSetHapticFeedback( // --> Based on: https://github.com/dos1/Linux-Magic-Tr
 	WDF_MEMORY_DESCRIPTOR			memoryDescriptor;
 	WDF_USB_CONTROL_SETUP_PACKET	setupPacket;
 	ULONG							cbTransferred = 0;
+	WDF_REQUEST_SEND_OPTIONS		sendOptions;
 	CONST BYTE						mt2Click[] = { 0x22, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13 };
 	CONST BYTE						mt2Release[] = { 0x23, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13 }; // WARNING: sizeof(mt2Release) MUST BE == TO sizeof(mt2Click)!
 
@@ -687,10 +702,13 @@ AmtPtpSetHapticFeedback( // --> Based on: https://github.com/dos1/Linux-Magic-Tr
 
 	setupPacket.Packet.bm.Request.Type = BmRequestClass;
 
+	// A wedged interface must not hang the caller (now also Windows' SET_FEATURE requests)
+	WDF_REQUEST_SEND_OPTIONS_INIT(&sendOptions, WDF_REQUEST_SEND_OPTION_TIMEOUT);
+	WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&sendOptions, WDF_REL_TIMEOUT_IN_SEC(3));
 	status = WdfUsbTargetDeviceSendControlTransferSynchronously(
 		DeviceContext->UsbDevice,
 		WDF_NO_HANDLE,
-		NULL,
+		&sendOptions,
 		&setupPacket,
 		&memoryDescriptor,
 		&cbTransferred
@@ -727,10 +745,13 @@ AmtPtpSetHapticFeedback( // --> Based on: https://github.com/dos1/Linux-Magic-Tr
 
 	setupPacket.Packet.bm.Request.Type = BmRequestClass;
 
+	// A wedged interface must not hang the caller (now also Windows' SET_FEATURE requests)
+	WDF_REQUEST_SEND_OPTIONS_INIT(&sendOptions, WDF_REQUEST_SEND_OPTION_TIMEOUT);
+	WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&sendOptions, WDF_REL_TIMEOUT_IN_SEC(3));
 	status = WdfUsbTargetDeviceSendControlTransferSynchronously(
 		DeviceContext->UsbDevice,
 		WDF_NO_HANDLE,
-		NULL,
+		&sendOptions,
 		&setupPacket,
 		&memoryDescriptor,
 		&cbTransferred
@@ -1088,6 +1109,113 @@ AmtPtpEmergResetDevice(
 
 	return status;
 
+}
+
+//
+// Pushes the click waveform the pad should use: Windows' haptic settings once Windows has sent
+// them, unless the OverrideWindowsHaptics setting is on; the FeedbackClick/FeedbackRelease
+// settings otherwise (see Mt2HapticResolveClick).
+//
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+AmtPtpApplyHapticFeedback(
+	_In_ PDEVICE_CONTEXT DeviceContext
+)
+{
+	NTSTATUS status;
+	LONG     windowsState;
+	BOOLEAN  overrideWindows;
+	ULONG    feedbackClick;
+	ULONG    feedbackRelease;
+
+	if (!AmtPtpIsMagicTrackpad2(DeviceContext)) {
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	WdfWaitLockAcquire(DeviceContext->HapticLock, NULL);
+
+	windowsState = InterlockedCompareExchange(&DeviceContext->WindowsHapticState, 0, 0);
+	overrideWindows = ReadSettingValue(L"OverrideWindowsHaptics", 0) ? TRUE : FALSE;
+	Mt2HapticResolveClick(
+		overrideWindows,
+		MT2_HAPTIC_STATE_IS_VALID(windowsState),
+		MT2_HAPTIC_STATE_THRESHOLD(windowsState),
+		MT2_HAPTIC_STATE_INTENSITY(windowsState),
+		ReadSettingValue(L"FeedbackClick", 0x08081E),
+		ReadSettingValue(L"FeedbackRelease", 0x020218),
+		&feedbackClick,
+		&feedbackRelease
+	);
+
+	if (!overrideWindows && MT2_HAPTIC_STATE_IS_VALID(windowsState)) {
+		TraceEvents(
+			TRACE_LEVEL_INFORMATION,
+			TRACE_DRIVER,
+			"%!FUNC! Windows settings: threshold %d, intensity %d -> click 0x%06lX, release 0x%06lX",
+			MT2_HAPTIC_STATE_THRESHOLD(windowsState),
+			MT2_HAPTIC_STATE_INTENSITY(windowsState),
+			feedbackClick,
+			feedbackRelease
+		);
+	}
+	else {
+		TraceEvents(
+			TRACE_LEVEL_INFORMATION,
+			TRACE_DRIVER,
+			"%!FUNC! Driver settings (override %d, Windows values %d): click 0x%06lX, release 0x%06lX",
+			overrideWindows,
+			MT2_HAPTIC_STATE_IS_VALID(windowsState),
+			feedbackClick,
+			feedbackRelease
+		);
+	}
+
+	status = AmtPtpSetHapticFeedback(DeviceContext, feedbackClick, feedbackRelease);
+
+	WdfWaitLockRelease(DeviceContext->HapticLock);
+	return status;
+}
+
+// Milliseconds on a precise monotonic clock (GetTickCount64 steps by ~16 ms).
+static
+ULONGLONG
+AmtPtpMilliseconds(VOID)
+{
+	LARGE_INTEGER counter, frequency;
+
+	QueryPerformanceCounter(&counter);
+	QueryPerformanceFrequency(&frequency);
+	return (ULONGLONG)(counter.QuadPart / (frequency.QuadPart / 1000));
+}
+
+//
+// Fires one 0x53 pulse at least MinGapMs after the start of the previous one. Every pulse goes
+// through here, Windows' triggers and the Control Panel pipe's CMD_ACTUATE alike, so pulses from
+// both never land closer together than that. HapticLock also keeps a pulse from interleaving with
+// the 0x22/0x23 transfers of AmtPtpApplyHapticFeedback.
+//
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+AmtPtpActuatePaced(
+	_In_ PDEVICE_CONTEXT DeviceContext,
+	_In_ ULONG Feedback,
+	_In_ ULONG MinGapMs
+)
+{
+	NTSTATUS  status;
+	ULONGLONG elapsed;
+
+	WdfWaitLockAcquire(DeviceContext->HapticLock, NULL);
+
+	elapsed = AmtPtpMilliseconds() - DeviceContext->LastHapticTriggerMs;
+	if (elapsed < MinGapMs) {
+		Sleep((DWORD)(MinGapMs - elapsed));
+	}
+	DeviceContext->LastHapticTriggerMs = AmtPtpMilliseconds();
+	status = AmtPtpActuate(DeviceContext, Feedback);
+
+	WdfWaitLockRelease(DeviceContext->HapticLock);
+	return status;
 }
 
 _IRQL_requires_(PASSIVE_LEVEL)

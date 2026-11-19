@@ -18,6 +18,7 @@
 #define USAGE_MINIMUM 0x19
 #define USAGE_MAXIMUM 0x29
 #define LOGICAL_MINIMUM 0x15
+#define LOGICAL_MINIMUM_2 0x16
 #define LOGICAL_MAXIMUM 0x25
 #define LOGICAL_MAXIMUM_2 0x26
 #define LOGICAL_MAXIMUM_3 0x27
@@ -35,6 +36,7 @@
 #define REPORT_SIZE     0x75
 #define INPUT           0x81
 #define FEATURE         0xb1
+#define OUTPUT          0x91
 
 #define BEGIN_COLLECTION 0xa1
 #define END_COLLECTION   0xc0
