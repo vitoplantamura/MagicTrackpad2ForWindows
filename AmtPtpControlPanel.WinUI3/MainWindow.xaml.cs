@@ -150,6 +150,11 @@ namespace AmtPtpControlPanel.WinUI3
             Title = T("Main", "Magic Trackpad 2 Control Panel");
             TitleText.Text = Title;
 
+            ClickFeedbackWindowsTitle.Text = T("Section.ClickFeedbackWindows", "Click feel from Windows Settings");
+            WindowsHapticSettings.Content = T("ctlWindowsHapticSettings", "Let Windows Settings control the click (recommended)");
+            WindowsHapticSettingsNote.Text = T("ctlWindowsHapticSettingsNote", "Windows Settings > Bluetooth & devices > Touchpad then has three controls for this trackpad: Click sensitivity (how hard you press to click), Haptic click (how strong the click feels) and Haptic signals (short taps Windows plays, for example when a window snaps into place).");
+            WindowsHapticSettingsLink.Content = T("ctlWindowsHapticSettingsLink", "Open Windows touchpad settings");
+            WindowsHapticOverrideNote.Text = T("ctlWindowsHapticOverrideNote", "Choosing any other click option on this page overrides Windows Settings.");
             ClickFeedbackTitle.Text = T("Section.ClickFeedbackMacOS", "MacOS click options");
             MacOSClickOptions.Content = T("ctlMacOSClickOptions", "Use macOS Click Options:");
             SilentClicking.Content = T("ctlSilentClicking", "Silent clicking");
@@ -183,6 +188,75 @@ namespace AmtPtpControlPanel.WinUI3
             TouchpadSettingsButton.Content = T("ctlTouchpadSettings", "Windows Touchpad Settings");
             ApplyButton.Content = T("ctlApply", "Apply");
             GitHubLink.Content = T("Link.GitHub", "Project on GitHub");
+
+            UpdateWindowsHapticTexts();
+        }
+
+        private enum WindowsHapticSupport { Windows10, Found, NotFound }
+
+        private readonly WindowsHapticSupport _hapticSupport = DetectWindowsHapticSupport();
+
+        // Windows writes these values once its Settings app has haptic touchpad controls. Older
+        // Windows 11 builds never write them; a new build may not have written them yet, so
+        // "not found" is only a hint and the texts say so.
+        private static WindowsHapticSupport DetectWindowsHapticSupport()
+        {
+            if (Environment.OSVersion.Version.Build < 22000)
+                return WindowsHapticSupport.Windows10;
+
+            try
+            {
+                using (Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\PrecisionTouchPad"))
+                {
+                    if (key?.GetValue("FeedbackIntensity") != null || key?.GetValue("ClickForceSensitivity") != null)
+                        return WindowsHapticSupport.Found;
+                }
+            }
+            catch
+            {
+                // Treat an unreadable key like a missing one.
+            }
+
+            return WindowsHapticSupport.NotFound;
+        }
+
+        // Texts that depend on the Windows version and on which click option is selected.
+        private void UpdateWindowsHapticTexts()
+        {
+            bool windowsMode = WindowsHapticSettings.IsChecked == true;
+
+            switch (_hapticSupport)
+            {
+                case WindowsHapticSupport.Found:
+                    WindowsHapticAvailability.Severity = InfoBarSeverity.Success;
+                    WindowsHapticAvailability.Title = T("ctlWindowsHapticFoundTitle", "Available on this PC");
+                    WindowsHapticAvailability.Message = T("ctlWindowsHapticFound", "Your Windows has haptic touchpad settings. Changes there apply to the trackpad right away.");
+                    break;
+                case WindowsHapticSupport.Windows10:
+                    WindowsHapticAvailability.Severity = InfoBarSeverity.Informational;
+                    WindowsHapticAvailability.Title = T("ctlWindowsHapticWin10Title", "Not available on Windows 10");
+                    WindowsHapticAvailability.Message = T("ctlWindowsHapticWin10", "Windows 10 has no haptic touchpad settings, so the trackpad uses the macOS click options below. Everything else works as usual.");
+                    break;
+                default:
+                    WindowsHapticAvailability.Severity = InfoBarSeverity.Informational;
+                    WindowsHapticAvailability.Title = T("ctlWindowsHapticNotFoundTitle", "Your Windows may not have these settings yet");
+                    WindowsHapticAvailability.Message = T("ctlWindowsHapticNotFound", "If Touchpad settings show no Click sensitivity or Haptic click, this version of Windows 11 doesn't support haptic touchpads. The trackpad then uses the macOS click options below, and everything else works as usual. You can keep this option: Windows takes over once an update adds the settings.");
+                    break;
+            }
+
+            bool windowsActive = _hapticSupport == WindowsHapticSupport.Found;
+
+            if (!windowsMode)
+                WindowsHapticHeaderStatus.Text = T("ctlWindowsHapticStatusOverridden", "Not in use: a click option below overrides Windows Settings");
+            else if (windowsActive)
+                WindowsHapticHeaderStatus.Text = T("ctlWindowsHapticStatusActive", "In use");
+            else
+                WindowsHapticHeaderStatus.Text = T("ctlWindowsHapticStatusFallback", "Selected. Until Windows has these settings, the macOS click options apply");
+
+            MacOSFallbackNote.Visibility = windowsMode ? Visibility.Visible : Visibility.Collapsed;
+            MacOSFallbackNote.Text = windowsActive
+                ? T("ctlMacOSFallbackBackup", "Windows Settings controls the click. These options only apply for the moment after the trackpad connects, before Windows sends its settings.")
+                : T("ctlMacOSFallbackActive", "In use now: Windows has no haptic touchpad settings here, so these options set how the click feels.");
         }
 
         private void LoadSettings()
@@ -193,6 +267,10 @@ namespace AmtPtpControlPanel.WinUI3
             {
                 DisableFeedback.IsChecked = true;
             }
+            else if (s.OverrideWindowsHaptics == 0)
+            {
+                WindowsHapticSettings.IsChecked = true;
+            }
             else if (s.FeedbackClick == 0xffffff && s.FeedbackRelease == 0xffffff)
             {
                 MaximumFeedback.IsChecked = true;
@@ -200,7 +278,11 @@ namespace AmtPtpControlPanel.WinUI3
             else
             {
                 MacOSClickOptions.IsChecked = true;
+            }
 
+            // The macOS options are also what the Windows mode falls back to, so show them in every mode.
+            if (s.FeedbackClick != 0xffffff || s.FeedbackRelease != 0xffffff)
+            {
                 if ((s.FeedbackClick & 0xffff00) == 0 && (s.FeedbackRelease & 0xffff00) == 0)
                     SilentClicking.IsChecked = true;
 
@@ -239,25 +321,19 @@ namespace AmtPtpControlPanel.WinUI3
             if (sender is not RadioButton radio || radio.IsChecked != true)
                 return;
 
-            if (ReferenceEquals(radio, MacOSClickOptions))
+            // The options sit in different expanders, so they are not one radio group.
+            foreach (RadioButton other in new[] { WindowsHapticSettings, MacOSClickOptions, MaximumFeedback, DisableFeedback })
             {
-                MaximumFeedback.IsChecked = false;
-                DisableFeedback.IsChecked = false;
-            }
-            else if (ReferenceEquals(radio, MaximumFeedback))
-            {
-                MacOSClickOptions.IsChecked = false;
-                DisableFeedback.IsChecked = false;
-            }
-            else if (ReferenceEquals(radio, DisableFeedback))
-            {
-                MacOSClickOptions.IsChecked = false;
-                MaximumFeedback.IsChecked = false;
+                if (!ReferenceEquals(other, radio))
+                    other.IsChecked = false;
             }
 
-            bool macEnabled = MacOSClickOptions.IsChecked == true;
+            // In the Windows mode the macOS options stay editable: they are its fallback.
+            bool macEnabled = MacOSClickOptions.IsChecked == true || WindowsHapticSettings.IsChecked == true;
             SilentClicking.IsEnabled = macEnabled;
             FeedbackSlider.IsEnabled = macEnabled;
+
+            UpdateWindowsHapticTexts();
         }
 
         private void StopOptions_Checked(object sender, RoutedEventArgs e)
@@ -356,6 +432,9 @@ namespace AmtPtpControlPanel.WinUI3
         private async Task<bool> SaveSettingsAsync()
         {
             TrackpadSettings s = new TrackpadSettings();
+
+            // Every option except the Windows one overrides Windows' haptic settings.
+            s.OverrideWindowsHaptics = WindowsHapticSettings.IsChecked == true ? 0 : 1;
 
             if (DisableFeedback.IsChecked == true)
             {

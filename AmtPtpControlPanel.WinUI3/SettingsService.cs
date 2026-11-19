@@ -14,6 +14,10 @@ namespace AmtPtpControlPanel.WinUI3
         public int PalmRejection = 1;
         public int InvertMovement = 0;
         public int AllowNonAdminAccess = 0;
+        // 0: Windows Settings (click force, haptic intensity) decide the click feedback once Windows
+        // sends them; FeedbackClick/FeedbackRelease are the fallback (e.g. Windows 10). 1: always use
+        // FeedbackClick/FeedbackRelease.
+        public int OverrideWindowsHaptics = 0;
     }
 
     public static class SettingsService
@@ -48,6 +52,7 @@ namespace AmtPtpControlPanel.WinUI3
                     s.PalmRejection = GetInt32(key, "PalmRejection", s.PalmRejection);
                     s.InvertMovement = GetInt32(key, "InvertMovement", s.InvertMovement);
                     s.AllowNonAdminAccess = GetInt32(key, "AllowNonAdminAccess", s.AllowNonAdminAccess);
+                    s.OverrideWindowsHaptics = GetInt32(key, "OverrideWindowsHaptics", s.OverrideWindowsHaptics);
                 }
             }
             catch
@@ -99,6 +104,7 @@ namespace AmtPtpControlPanel.WinUI3
                     parameters.SetValue("PalmRejection", s.PalmRejection);
                     parameters.SetValue("InvertMovement", s.InvertMovement);
                     parameters.SetValue("AllowNonAdminAccess", s.AllowNonAdminAccess);
+                    parameters.SetValue("OverrideWindowsHaptics", s.OverrideWindowsHaptics);
                 }
             }
         }
