@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <RootNamespace>HapticsLab</RootNamespace>
+    <AssemblyName>HapticsLab</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Used when HapticsLab runs outside a source checkout, e.g. a build downloaded from CI -->
+    <EmbeddedResource Include="..\..\common\MagicTrackpad2Haptics.h" LogicalName="MagicTrackpad2Haptics.h" Link="MagicTrackpad2Haptics.h" />
+  </ItemGroup>
+
+</Project>

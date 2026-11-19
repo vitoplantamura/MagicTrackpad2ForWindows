@@ -61,3 +61,17 @@ jobs:
         with:
           name: result
           path: result/
+
+      # Developer tool for testing how the haptics feel; not part of the driver package
+      - name: Build HapticsLab
+        run: |
+          dotnet publish ./tools/HapticsLab/HapticsLab.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o hapticslab/x64
+          dotnet publish ./tools/HapticsLab/HapticsLab.csproj -c Release -r win-arm64 --self-contained false -p:PublishSingleFile=true -o hapticslab/arm64
+
+      - name: Upload HapticsLab
+        uses: actions/upload-artifact@v4
+        with:
+          name: HapticsLab
+          path: |
+            hapticslab/x64/HapticsLab.exe
+            hapticslab/arm64/HapticsLab.exe
