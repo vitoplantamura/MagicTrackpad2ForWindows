@@ -15,6 +15,12 @@ DEFINE_GUID(GUID_DEVICEINTERFACE_AmtPtpHidFilter,
 // the first acknowledgement has been seen to take about 5 s, and sometimes it never comes.
 #define PTP_FEATURE_REPORT_TIMEOUT_SEC 8
 
+// Delay from a mouse-mode report to the multitouch configuration. When the pad reconnects by
+// itself the device does not restart, so this is what configures it, and until then the filter
+// drops its mouse reports. Not shorter: a SET_FEATURE sent right after the link came up was
+// answered NOT_READY after 5.4 s, while one sent 1.2 s after was acknowledged in 125 ms.
+#define PTP_MOUSE_MODE_CONFIGURE_DELAY_MS 1000
+
 #define HID_VID_APPLE_USB 0x05ac
 #define HID_VID_APPLE_BT  0x004c
 #define HID_PID_MAGIC_TRACKPAD_2 0x0265

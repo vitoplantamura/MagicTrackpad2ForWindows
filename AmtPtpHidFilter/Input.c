@@ -465,7 +465,7 @@ PtpFilterInputParseReport(
 		{
 			TraceEvents(TRACE_LEVEL_WARNING, TRACE_INPUT,
 				"%!FUNC! Mouse Packet - Setting Wellspring mode");
-			WdfTimerStart(DeviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_SEC(3));
+			WdfTimerStart(DeviceContext->HidTransportRecoveryTimer, WDF_REL_TIMEOUT_IN_MS(PTP_MOUSE_MODE_CONFIGURE_DELAY_MS));
 		}
 		break;
 
