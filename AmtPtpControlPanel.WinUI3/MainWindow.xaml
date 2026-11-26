@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:local="using:AmtPtpControlPanel.WinUI3"
     mc:Ignorable="d">
 
     <Grid x:Name="RootGrid" Background="Transparent">
@@ -99,6 +100,81 @@
                         </Grid>
                     </StackPanel>
                 </Border>
+
+                <!-- Live view -->
+                <Expander
+                    x:Name="LiveViewExpander"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    IsExpanded="False"
+                    Expanding="LiveViewExpander_Expanding"
+                    Collapsed="LiveViewExpander_Collapsed">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal" Spacing="12" Padding="0,16,0,16">
+                                <Border Style="{StaticResource SettingsIconTileStyle}">
+                                    <Path
+                                        Width="24"
+                                        Height="24"
+                                        Stretch="Uniform"
+                                        Data="M 4,4 H 20 A 3,3 0 0 1 23,7 V 17 A 3,3 0 0 1 20,20 H 4 A 3,3 0 0 1 1,17 V 7 A 3,3 0 0 1 4,4 Z M 10,11 A 2,2 0 1 1 14,11 A 2,2 0 1 1 10,11 Z"
+                                        Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                        StrokeThickness="1.2"
+                                        Fill="Transparent"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock
+                                    x:Name="LiveViewTitle"
+                                    Margin="0"
+                                    Style="{StaticResource CardTitleStyle}"
+                                    VerticalAlignment="Center"
+                                    Text="Live view" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <StackPanel Spacing="12">
+
+                        <local:TrackpadLiveView x:Name="LiveView" />
+
+                        <TextBlock
+                            x:Name="LiveViewStopWarning"
+                            HorizontalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
+
+                        <StackPanel
+                            HorizontalAlignment="Center"
+                            Orientation="Horizontal"
+                            Spacing="24">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock
+                                    x:Name="PadColorLabel"
+                                    VerticalAlignment="Center"
+                                    Text="Trackpad color" />
+                                <ComboBox
+                                    x:Name="PadColorComboBox"
+                                    MinWidth="110"
+                                    VerticalAlignment="Center"
+                                    SelectionChanged="PadColorComboBox_SelectionChanged">
+                                    <ComboBoxItem x:Name="PadColorWhite" Content="White" />
+                                    <ComboBoxItem x:Name="PadColorBlack" Content="Black" />
+                                </ComboBox>
+                            </StackPanel>
+                            <CheckBox
+                                x:Name="ShowHoverCheckBox"
+                                VerticalAlignment="Center"
+                                Click="LiveViewOption_Click"
+                                Content="Show fingers hovering over the surface" />
+                            <CheckBox
+                                x:Name="ShowDetailsCheckBox"
+                                VerticalAlignment="Center"
+                                Click="LiveViewOption_Click"
+                                Content="Show touch details" />
+                        </StackPanel>
+                    </StackPanel>
+                    </Expander>
 
                 <!-- macOS click options -->
                 <Expander

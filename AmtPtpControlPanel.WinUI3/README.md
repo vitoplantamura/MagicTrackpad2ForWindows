@@ -32,7 +32,7 @@ application and keeps the `requireAdministrator` manifest, because it writes to
 
 The publish profiles are configured for a **single-file** build. The result is
 a single `AmtPtpControlPanel.WinUI3.exe`. The translations XML is embedded in
-the executable, and the UI language is persisted in
+the executable, and the UI language and the live view options are persisted in
 `HKCU\Software\AmtPtpControlPanel`.
 
 The exe is self-contained, so it runs on a clean Windows 10/11 machine with no

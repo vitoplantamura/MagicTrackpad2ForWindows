@@ -36,6 +36,19 @@
     <String id="Message.SizeInvalid">Size must be greater than or equal to 0.</String>
     <String id="Message.RegistryWriteError">Error writing to the registry: {0}</String>
     <String id="Battery.LastUpdated">Battery ({0}) --- LAST UPDATED: {1}</String>
+    <String id="Section.LiveView">Live view</String>
+    <String id="LiveView.Hint">Touch the trackpad</String>
+    <String id="LiveView.Error">Could not read the trackpad.</String>
+    <String id="LiveView.PadColor">Trackpad color</String>
+    <String id="LiveView.PadWhite">White</String>
+    <String id="LiveView.PadBlack">Black</String>
+    <String id="LiveView.ShowHover">Show fingers hovering over the surface</String>
+    <String id="LiveView.ShowDetails">Show touch details</String>
+    <String id="LiveView.StopWarning">Fingers may look stuck as they lift, because "{0}" is not set to "{1}".</String>
+    <String id="LiveView.Finger">Finger</String>
+    <String id="LiveView.Palm">Palm</String>
+    <String id="LiveView.Pressure">pressure</String>
+    <String id="LiveView.Hovering">hovering</String>
   </Language>
 
   <Language id="it">
@@ -74,6 +87,19 @@
     <String id="Message.SizeInvalid">La dimensione deve essere maggiore o uguale a 0.</String>
     <String id="Message.RegistryWriteError">Errore durante la scrittura nel registro: {0}</String>
     <String id="Battery.LastUpdated">Batteria ({0}) --- ULTIMO AGGIORNAMENTO: {1}</String>
+    <String id="Section.LiveView">Vista in tempo reale</String>
+    <String id="LiveView.Hint">Tocca il trackpad</String>
+    <String id="LiveView.Error">Impossibile leggere il trackpad.</String>
+    <String id="LiveView.PadColor">Colore del trackpad</String>
+    <String id="LiveView.PadWhite">Bianco</String>
+    <String id="LiveView.PadBlack">Nero</String>
+    <String id="LiveView.ShowHover">Mostra le dita sospese sopra la superficie</String>
+    <String id="LiveView.ShowDetails">Mostra i dettagli dei tocchi</String>
+    <String id="LiveView.StopWarning">Le dita possono sembrare bloccate mentre si sollevano, perché "{0}" non è impostato su "{1}".</String>
+    <String id="LiveView.Finger">Dito</String>
+    <String id="LiveView.Palm">Palmo</String>
+    <String id="LiveView.Pressure">pressione</String>
+    <String id="LiveView.Hovering">sospeso</String>
   </Language>
 
   <Language id="es">
@@ -112,6 +138,19 @@
     <String id="Message.SizeInvalid">El tamaño debe ser mayor o igual que 0.</String>
     <String id="Message.RegistryWriteError">Error al escribir en el registro: {0}</String>
     <String id="Battery.LastUpdated">Batería ({0}) --- ÚLTIMA ACTUALIZACIÓN: {1}</String>
+    <String id="Section.LiveView">Vista en vivo</String>
+    <String id="LiveView.Hint">Toca el trackpad</String>
+    <String id="LiveView.Error">No se pudo leer el trackpad.</String>
+    <String id="LiveView.PadColor">Color del trackpad</String>
+    <String id="LiveView.PadWhite">Blanco</String>
+    <String id="LiveView.PadBlack">Negro</String>
+    <String id="LiveView.ShowHover">Mostrar los dedos que flotan sobre la superficie</String>
+    <String id="LiveView.ShowDetails">Mostrar detalles de los toques</String>
+    <String id="LiveView.StopWarning">Los dedos pueden parecer atascados al levantarlos, porque "{0}" no está en "{1}".</String>
+    <String id="LiveView.Finger">Dedo</String>
+    <String id="LiveView.Palm">Palma</String>
+    <String id="LiveView.Pressure">presión</String>
+    <String id="LiveView.Hovering">flotando</String>
   </Language>
 
   <Language id="fr">
@@ -150,6 +189,19 @@
     <String id="Message.SizeInvalid">La taille doit être supérieure ou égale à 0.</String>
     <String id="Message.RegistryWriteError">Erreur lors de l'écriture dans le registre : {0}</String>
     <String id="Battery.LastUpdated">Batterie ({0}) --- DERNIÈRE MISE À JOUR : {1}</String>
+    <String id="Section.LiveView">Vue en direct</String>
+    <String id="LiveView.Hint">Touchez le trackpad</String>
+    <String id="LiveView.Error">Impossible de lire le trackpad.</String>
+    <String id="LiveView.PadColor">Couleur du trackpad</String>
+    <String id="LiveView.PadWhite">Blanc</String>
+    <String id="LiveView.PadBlack">Noir</String>
+    <String id="LiveView.ShowHover">Afficher les doigts au-dessus de la surface</String>
+    <String id="LiveView.ShowDetails">Afficher les détails des contacts</String>
+    <String id="LiveView.StopWarning">Les doigts peuvent sembler bloqués lorsqu'ils se lèvent, car « {0} » n'est pas réglé sur « {1} ».</String>
+    <String id="LiveView.Finger">Doigt</String>
+    <String id="LiveView.Palm">Paume</String>
+    <String id="LiveView.Pressure">pression</String>
+    <String id="LiveView.Hovering">au-dessus</String>
   </Language>
 
   <Language id="de">
@@ -188,6 +240,19 @@
     <String id="Message.SizeInvalid">Die Größe muss größer oder gleich 0 sein.</String>
     <String id="Message.RegistryWriteError">Fehler beim Schreiben in die Registrierung: {0}</String>
     <String id="Battery.LastUpdated">Batterie ({0}) --- LETZTES UPDATE: {1}</String>
+    <String id="Section.LiveView">Live-Ansicht</String>
+    <String id="LiveView.Hint">Berühren Sie das Trackpad</String>
+    <String id="LiveView.Error">Das Trackpad konnte nicht gelesen werden.</String>
+    <String id="LiveView.PadColor">Trackpad-Farbe</String>
+    <String id="LiveView.PadWhite">Weiß</String>
+    <String id="LiveView.PadBlack">Schwarz</String>
+    <String id="LiveView.ShowHover">Finger über der Oberfläche anzeigen</String>
+    <String id="LiveView.ShowDetails">Berührungsdetails anzeigen</String>
+    <String id="LiveView.StopWarning">Finger können beim Anheben hängen bleiben, weil „{0}“ nicht auf „{1}“ eingestellt ist.</String>
+    <String id="LiveView.Finger">Finger</String>
+    <String id="LiveView.Palm">Handballen</String>
+    <String id="LiveView.Pressure">Druck</String>
+    <String id="LiveView.Hovering">schwebend</String>
   </Language>
 
   <Language id="pt">
@@ -226,6 +291,19 @@
     <String id="Message.SizeInvalid">O tamanho deve ser maior ou igual a 0.</String>
     <String id="Message.RegistryWriteError">Erro ao gravar no registro: {0}</String>
     <String id="Battery.LastUpdated">Bateria ({0}) --- ÚLTIMA ATUALIZAÇÃO: {1}</String>
+    <String id="Section.LiveView">Visualização ao vivo</String>
+    <String id="LiveView.Hint">Toque no trackpad</String>
+    <String id="LiveView.Error">Não foi possível ler o trackpad.</String>
+    <String id="LiveView.PadColor">Cor do trackpad</String>
+    <String id="LiveView.PadWhite">Branco</String>
+    <String id="LiveView.PadBlack">Preto</String>
+    <String id="LiveView.ShowHover">Mostrar os dedos pairando sobre a superfície</String>
+    <String id="LiveView.ShowDetails">Mostrar detalhes dos toques</String>
+    <String id="LiveView.StopWarning">Os dedos podem parecer presos ao levantar, porque "{0}" não está definido como "{1}".</String>
+    <String id="LiveView.Finger">Dedo</String>
+    <String id="LiveView.Palm">Palma</String>
+    <String id="LiveView.Pressure">pressão</String>
+    <String id="LiveView.Hovering">pairando</String>
   </Language>
 
   <Language id="ru">
@@ -264,6 +342,19 @@
     <String id="Message.SizeInvalid">Размер должен быть больше или равен 0.</String>
     <String id="Message.RegistryWriteError">Ошибка записи в реестр: {0}</String>
     <String id="Battery.LastUpdated">Батарея ({0}) --- ПОСЛЕДНЕЕ ОБНОВЛЕНИЕ: {1}</String>
+    <String id="Section.LiveView">Просмотр в реальном времени</String>
+    <String id="LiveView.Hint">Коснитесь трекпада</String>
+    <String id="LiveView.Error">Не удалось прочитать данные трекпада.</String>
+    <String id="LiveView.PadColor">Цвет трекпада</String>
+    <String id="LiveView.PadWhite">Белый</String>
+    <String id="LiveView.PadBlack">Чёрный</String>
+    <String id="LiveView.ShowHover">Показывать пальцы над поверхностью</String>
+    <String id="LiveView.ShowDetails">Показывать сведения о касаниях</String>
+    <String id="LiveView.StopWarning">Пальцы могут застывать при подъёме, потому что для «{0}» не выбрано «{1}».</String>
+    <String id="LiveView.Finger">Палец</String>
+    <String id="LiveView.Palm">Ладонь</String>
+    <String id="LiveView.Pressure">давление</String>
+    <String id="LiveView.Hovering">над поверхностью</String>
   </Language>
 
   <Language id="zh">
@@ -302,6 +393,19 @@
     <String id="Message.SizeInvalid">大小必须大于或等于 0。</String>
     <String id="Message.RegistryWriteError">写入注册表时出错：{0}</String>
     <String id="Battery.LastUpdated">电池 ({0}) --- 上次更新：{1}</String>
+    <String id="Section.LiveView">实时视图</String>
+    <String id="LiveView.Hint">触摸触控板</String>
+    <String id="LiveView.Error">无法读取触控板。</String>
+    <String id="LiveView.PadColor">触控板颜色</String>
+    <String id="LiveView.PadWhite">白色</String>
+    <String id="LiveView.PadBlack">黑色</String>
+    <String id="LiveView.ShowHover">显示悬停在表面上方的手指</String>
+    <String id="LiveView.ShowDetails">显示触摸详情</String>
+    <String id="LiveView.StopWarning">手指抬起时可能看起来卡住，因为“{0}”未设置为“{1}”。</String>
+    <String id="LiveView.Finger">手指</String>
+    <String id="LiveView.Palm">手掌</String>
+    <String id="LiveView.Pressure">压力</String>
+    <String id="LiveView.Hovering">悬停</String>
   </Language>
 
   <Language id="ja">
@@ -340,6 +444,19 @@
     <String id="Message.SizeInvalid">サイズは 0 以上である必要があります。</String>
     <String id="Message.RegistryWriteError">レジストリへの書き込みエラー: {0}</String>
     <String id="Battery.LastUpdated">バッテリー ({0}) --- 最終更新: {1}</String>
+    <String id="Section.LiveView">ライブビュー</String>
+    <String id="LiveView.Hint">トラックパッドに触れてください</String>
+    <String id="LiveView.Error">トラックパッドを読み取れませんでした。</String>
+    <String id="LiveView.PadColor">トラックパッドの色</String>
+    <String id="LiveView.PadWhite">ホワイト</String>
+    <String id="LiveView.PadBlack">ブラック</String>
+    <String id="LiveView.ShowHover">表面の上にある指を表示</String>
+    <String id="LiveView.ShowDetails">タッチの詳細を表示</String>
+    <String id="LiveView.StopWarning">「{0}」が「{1}」に設定されていないため、指を離すときに止まって見えることがあります。</String>
+    <String id="LiveView.Finger">指</String>
+    <String id="LiveView.Palm">手のひら</String>
+    <String id="LiveView.Pressure">圧力</String>
+    <String id="LiveView.Hovering">ホバー中</String>
   </Language>
 
   <Language id="ko">
@@ -378,5 +495,18 @@
     <String id="Message.SizeInvalid">크기는 0보다 크거나 같아야 합니다.</String>
     <String id="Message.RegistryWriteError">레지스트리 쓰기 오류: {0}</String>
     <String id="Battery.LastUpdated">배터리 ({0}) --- 마지막 업데이트: {1}</String>
+    <String id="Section.LiveView">실시간 보기</String>
+    <String id="LiveView.Hint">트랙패드를 터치하세요</String>
+    <String id="LiveView.Error">트랙패드를 읽을 수 없습니다.</String>
+    <String id="LiveView.PadColor">트랙패드 색상</String>
+    <String id="LiveView.PadWhite">흰색</String>
+    <String id="LiveView.PadBlack">검은색</String>
+    <String id="LiveView.ShowHover">표면 위에 떠 있는 손가락 표시</String>
+    <String id="LiveView.ShowDetails">터치 세부 정보 표시</String>
+    <String id="LiveView.StopWarning">"{0}"이(가) "{1}"(으)로 설정되어 있지 않아 손가락을 뗄 때 멈춘 것처럼 보일 수 있습니다.</String>
+    <String id="LiveView.Finger">손가락</String>
+    <String id="LiveView.Palm">손바닥</String>
+    <String id="LiveView.Pressure">압력</String>
+    <String id="LiveView.Hovering">떠 있음</String>
   </Language>
 </Localization>
