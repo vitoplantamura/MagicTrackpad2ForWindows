@@ -4,14 +4,19 @@ namespace AmtPtpControlPanel.WinUI3
 {
     public sealed class TrackpadSettings
     {
+        // These defaults are only used when a value is missing from the registry, so they
+        // must match the fallbacks in the drivers (PtpFilterReadSettings in
+        // AmtPtpHidFilter/Driver.c and AmtPtpServiceTouchInputInterruptType5 in
+        // AmtPtpDeviceUsbUm/InputInterrupt.c). Otherwise the UI shows settings that the
+        // trackpad is not actually using.
         public int ButtonDisabled;
-        public int FeedbackClick = 0x060617;
-        public int FeedbackRelease = 0x000014;
+        public int FeedbackClick = 0x08081E;
+        public int FeedbackRelease = 0x020218;
         public int StopPressure = -1;
         public int StopSize = -1;
         public int IgnoreButtonFinger;
         public int IgnoreNearFingers = 1;
-        public int PalmRejection = 1;
+        public int PalmRejection = 0;
         public int InvertMovement = 0;
         public int AllowNonAdminAccess = 0;
     }
@@ -21,11 +26,28 @@ namespace AmtPtpControlPanel.WinUI3
         private const string UmdfParametersPath =
             @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\WUDF\Services\AmtPtpDeviceUsbUm\Parameters";
 
+        private const string FilterParametersPath =
+            @"SYSTEM\CurrentControlSet\Services\AmtPtpHidFilter\Parameters";
+
         private const string WudfServicesBase =
             @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\WUDF\Services";
 
         private const string SystemServicesBase =
             @"SYSTEM\CurrentControlSet\Services";
+
+        private static readonly string[] ValueNames =
+        {
+            "ButtonDisabled",
+            "FeedbackClick",
+            "FeedbackRelease",
+            "StopPressure",
+            "StopSize",
+            "IgnoreButtonFinger",
+            "IgnoreNearFingers",
+            "PalmRejection",
+            "InvertMovement",
+            "AllowNonAdminAccess",
+        };
 
         public static TrackpadSettings Load()
         {
@@ -33,21 +55,24 @@ namespace AmtPtpControlPanel.WinUI3
 
             try
             {
-                using (RegistryKey? key = Registry.LocalMachine.OpenSubKey(UmdfParametersPath))
+                // The USB driver's key is read first, as before. Installing or updating the
+                // driver package recreates that key empty while the Bluetooth filter's key
+                // survives, so a value missing from it is taken from the Bluetooth key.
+                using (RegistryKey? usb = Registry.LocalMachine.OpenSubKey(UmdfParametersPath))
+                using (RegistryKey? bt = Registry.LocalMachine.OpenSubKey(FilterParametersPath))
                 {
-                    if (key == null)
-                        return s;
+                    int Get(string name, int fallback) => GetInt32(usb, name) ?? GetInt32(bt, name) ?? fallback;
 
-                    s.ButtonDisabled = GetInt32(key, "ButtonDisabled", s.ButtonDisabled);
-                    s.FeedbackClick = GetInt32(key, "FeedbackClick", s.FeedbackClick);
-                    s.FeedbackRelease = GetInt32(key, "FeedbackRelease", s.FeedbackRelease);
-                    s.StopPressure = GetInt32(key, "StopPressure", s.StopPressure);
-                    s.StopSize = GetInt32(key, "StopSize", s.StopSize);
-                    s.IgnoreButtonFinger = GetInt32(key, "IgnoreButtonFinger", s.IgnoreButtonFinger);
-                    s.IgnoreNearFingers = GetInt32(key, "IgnoreNearFingers", s.IgnoreNearFingers);
-                    s.PalmRejection = GetInt32(key, "PalmRejection", s.PalmRejection);
-                    s.InvertMovement = GetInt32(key, "InvertMovement", s.InvertMovement);
-                    s.AllowNonAdminAccess = GetInt32(key, "AllowNonAdminAccess", s.AllowNonAdminAccess);
+                    s.ButtonDisabled = Get("ButtonDisabled", s.ButtonDisabled);
+                    s.FeedbackClick = Get("FeedbackClick", s.FeedbackClick);
+                    s.FeedbackRelease = Get("FeedbackRelease", s.FeedbackRelease);
+                    s.StopPressure = Get("StopPressure", s.StopPressure);
+                    s.StopSize = Get("StopSize", s.StopSize);
+                    s.IgnoreButtonFinger = Get("IgnoreButtonFinger", s.IgnoreButtonFinger);
+                    s.IgnoreNearFingers = Get("IgnoreNearFingers", s.IgnoreNearFingers);
+                    s.PalmRejection = Get("PalmRejection", s.PalmRejection);
+                    s.InvertMovement = Get("InvertMovement", s.InvertMovement);
+                    s.AllowNonAdminAccess = Get("AllowNonAdminAccess", s.AllowNonAdminAccess);
                 }
             }
             catch
@@ -64,19 +89,72 @@ namespace AmtPtpControlPanel.WinUI3
             Save(SystemServicesBase, "AmtPtpHidFilter", s);
         }
 
-        private static int GetInt32(RegistryKey key, string name, int fallback)
+        /// <summary>
+        /// Copies every value that exists in only one of the two drivers' Parameters keys
+        /// into the other one, so that USB and Bluetooth use the same settings again after
+        /// a driver install has emptied the USB key. Values present in both keys are left
+        /// alone. Returns true if anything was written, so the caller can ask the drivers
+        /// to reload their settings.
+        /// </summary>
+        public static bool SyncMissingValues()
+        {
+            bool changed = false;
+
+            try
+            {
+                using (RegistryKey? usb = OpenParametersForWriting(WudfServicesBase + @"\AmtPtpDeviceUsbUm"))
+                using (RegistryKey? bt = OpenParametersForWriting(SystemServicesBase + @"\AmtPtpHidFilter"))
+                {
+                    // Nothing to sync unless both drivers are installed.
+                    if (usb == null || bt == null)
+                        return false;
+
+                    foreach (string name in ValueNames)
+                    {
+                        int? usbValue = GetInt32(usb, name);
+                        int? btValue = GetInt32(bt, name);
+
+                        if (usbValue == null && btValue != null)
+                        {
+                            usb.SetValue(name, btValue.Value);
+                            changed = true;
+                        }
+                        else if (btValue == null && usbValue != null)
+                        {
+                            bt.SetValue(name, usbValue.Value);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Best effort: pressing Apply writes both keys anyway.
+            }
+
+            return changed;
+        }
+
+        private static RegistryKey? OpenParametersForWriting(string serviceKeyPath)
+        {
+            using (RegistryKey? service = Registry.LocalMachine.OpenSubKey(serviceKeyPath, true))
+            {
+                return service?.CreateSubKey("Parameters", true);
+            }
+        }
+
+        private static int? GetInt32(RegistryKey? key, string name)
         {
             try
             {
-                object? value = key.GetValue(name);
-                if (value is int i)
+                if (key?.GetValue(name) is int i)
                     return i;
             }
             catch
             {
             }
 
-            return fallback;
+            return null;
         }
 
         private static void Save(string baseKeyPath, string serviceName, TrackpadSettings s)
