@@ -14,6 +14,7 @@ namespace AmtPtpControlPanel.WinUI3
     public sealed partial class MainWindow : Window
     {
         private bool _updatingLanguageCombo;
+        private bool _updatingLiveViewOptions;
 
         public MainWindow()
         {
@@ -60,6 +61,7 @@ namespace AmtPtpControlPanel.WinUI3
 
             RootGrid.Loaded += MainWindow_Loaded;
             RootGrid.ActualThemeChanged += (s, e) => UpdateTitleBarButtonColors();
+            Closed += (s, e) => LiveView.Shutdown();
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -67,6 +69,7 @@ namespace AmtPtpControlPanel.WinUI3
             UpdateTitleBarButtonColors();
             ApplyLocalization();
             PopulateLanguageCombo();
+            LoadLiveViewOptions();
 
             // Installing or updating the driver empties the USB driver's settings, so it
             // falls back to its defaults while Bluetooth keeps the user's settings. Copy
@@ -190,6 +193,18 @@ namespace AmtPtpControlPanel.WinUI3
             BatteryTitle.Text = T("Section.Battery", "Battery");
             UpdateBatteryButton.Content = T("ctlBatteryUpdate", "Update Battery");
 
+            LiveViewTitle.Text = T("Section.LiveView", "Live view");
+            PadColorLabel.Text = T("LiveView.PadColor", "Trackpad color");
+            PadColorWhite.Content = T("LiveView.PadWhite", "White");
+            PadColorBlack.Content = T("LiveView.PadBlack", "Black");
+            ShowHoverCheckBox.Content = T("LiveView.ShowHover", "Show fingers hovering over the surface");
+            ShowDetailsCheckBox.Content = T("LiveView.ShowDetails", "Show touch details");
+            LiveViewStopWarning.Text = string.Format(
+                T("LiveView.StopWarning", "Fingers may look stuck as they lift, because \"{0}\" is not set to \"{1}\"."),
+                T("groupBox3", "When you lift your finger from the trackpad"),
+                T("ctlStopDoNothing", "Do nothing"));
+            LiveView.ApplyLocalization();
+
             TouchpadSettingsButton.Content = T("ctlTouchpadSettings", "Windows Touchpad Settings");
             ApplyButton.Content = T("ctlApply", "Apply");
             GitHubLink.Content = T("Link.GitHub", "Project on GitHub");
@@ -242,6 +257,61 @@ namespace AmtPtpControlPanel.WinUI3
             PalmRejection.IsChecked = s.PalmRejection != 0;
             InvertMovement.IsChecked = s.InvertMovement != 0;
             AllowNonAdminAccess.IsChecked = s.AllowNonAdminAccess != 0;
+
+            UpdateLiveViewStopWarning(s.StopPressure != -1 || s.StopSize != -1);
+        }
+
+        private void LoadLiveViewOptions()
+        {
+            _updatingLiveViewOptions = true;
+
+            PadColorComboBox.SelectedItem = LiveViewSettings.DarkPad ? PadColorBlack : PadColorWhite;
+            ShowHoverCheckBox.IsChecked = LiveViewSettings.ShowHover;
+            ShowDetailsCheckBox.IsChecked = LiveViewSettings.ShowDetails;
+
+            LiveView.DarkPad = LiveViewSettings.DarkPad;
+            LiveView.ShowHover = LiveViewSettings.ShowHover;
+            LiveView.ShowDetails = LiveViewSettings.ShowDetails;
+
+            _updatingLiveViewOptions = false;
+        }
+
+        // With a pointer stop selected, the driver holds a finger's reported position
+        // still while it lifts, so the live view shows it stuck in place for a moment.
+        private void UpdateLiveViewStopWarning(bool pointerStopEnabled)
+        {
+            LiveViewStopWarning.Visibility = pointerStopEnabled ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void LiveViewExpander_Expanding(Expander sender, ExpanderExpandingEventArgs args)
+        {
+            LiveView.Start(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        }
+
+        private void LiveViewExpander_Collapsed(Expander sender, ExpanderCollapsedEventArgs args)
+        {
+            LiveView.Stop();
+        }
+
+        private void PadColorComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_updatingLiveViewOptions)
+                return;
+
+            bool dark = ReferenceEquals(PadColorComboBox.SelectedItem, PadColorBlack);
+            LiveView.DarkPad = dark;
+            LiveViewSettings.DarkPad = dark;
+        }
+
+        private void LiveViewOption_Click(object sender, RoutedEventArgs e)
+        {
+            bool showHover = ShowHoverCheckBox.IsChecked == true;
+            bool showDetails = ShowDetailsCheckBox.IsChecked == true;
+
+            LiveView.ShowHover = showHover;
+            LiveView.ShowDetails = showDetails;
+            LiveViewSettings.ShowHover = showHover;
+            LiveViewSettings.ShowDetails = showDetails;
         }
 
         private void ClickOptions_Checked(object sender, RoutedEventArgs e)
@@ -304,6 +374,7 @@ namespace AmtPtpControlPanel.WinUI3
                 {
                     UsbDevice.ReloadSettings();
                     BtDevice.SendIoctl(BtDevice.IOCTL_RELOAD_SETTINGS);
+                    UpdateLiveViewStopWarning(StopDoNothing.IsChecked != true);
                 }
             }
             finally
