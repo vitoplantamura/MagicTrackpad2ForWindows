@@ -70,6 +70,16 @@ namespace AmtPtpControlPanel.WinUI3
             ApplyLocalization();
             PopulateLanguageCombo();
             LoadLiveViewOptions();
+
+            // Installing or updating the driver empties the USB driver's settings, so it
+            // falls back to its defaults while Bluetooth keeps the user's settings. Copy
+            // anything missing across and let the drivers pick it up.
+            if (SettingsService.SyncMissingValues())
+            {
+                UsbDevice.ReloadSettings();
+                BtDevice.SendIoctl(BtDevice.IOCTL_RELOAD_SETTINGS);
+            }
+
             LoadSettings();
 
             await UpdateBatteryAsync(showErrorOnFailure: false);
